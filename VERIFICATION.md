@@ -95,6 +95,12 @@ of `Peck.app` in a stable location (e.g. `/Applications`):
    binding update; the old chord stops working and the new one arms.
 7. **Trailing options** — "Strip trailing newline" drops the last newline; "Press
    Return after typing" adds one.
+7a. **Auto-indent workaround** — paste a multi-line, indented block into an
+    auto-indenting target: with the mode off it staircases; "Bracketed paste"
+    fixes it in vim/readline (and holds the command until you press Return);
+    "Overwrite indent" fixes it in a Cocoa code editor. (The pure plan — marker
+    wrapping and select-line-start placement — is unit-tested; the actual
+    keystroke effect is AX-gated.)
 8. **Secure Input warning** — focus a Secure-Input field (e.g. a password field that
    asserts it) and arm; the warning appears with a proceed option.
 9. **Launch at login** — toggle it; confirm via `System Settings → General → Login

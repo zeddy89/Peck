@@ -49,6 +49,7 @@ Right-click the menu bar icon → Settings.
 | Delay before typing | 400 ms | Time between the focus click and the first keystroke. Slow remote consoles need the focus event to round-trip; bump this to 800–1000 ms for laggy VPN + noVNC combos. |
 | Keystroke delay | 15 ms | Per-character pacing. If a console drops or reorders characters (classic noVNC-over-WAN behavior), raise to 25–40 ms. |
 | Typing mode | Keycodes | See below. |
+| Auto-indent workaround | Off | Defeats a target that auto-indents what Peck types (which stacks indentation on multi-line pastes). See below. |
 | Confirm paste over | 1000 chars | Above this many characters, Peck shows the character and line count and asks before typing — the guardrail against pecking a 40 KB file into a root shell. Set to `0` to disable. |
 | Global hotkey | On, ⌃⌥⌘V | Toggle it on/off and record a new shortcut. Click the recorder, then press a modifier + key combination (needs at least one of ⌘/⌥/⌃). |
 | Press Return after typing | Off | Send one Return once the clipboard has been typed. |
@@ -64,6 +65,17 @@ Right-click the menu bar icon → Settings.
 **Unicode.** Injects characters directly with `keyboardSetUnicodeString`. Broadest character support, works great in native macOS apps and most browsers, unreliable in VNC-style consoles.
 
 One caveat for the keycode mode: the *guest* VM's keyboard layout matters too. If your Mac is on US QWERTY but the VM console is set to German, symbols will land wrong. That's inherent to how VNC transmits keys, and it's the same behavior ClickPaste has on Windows.
+
+## Auto-indent workaround
+
+Because Peck *types* rather than pastes, targets with auto-indent (vim with `autoindent`, most GUI code editors) re-indent each new line — and Peck then types that line's own leading whitespace on top, so indentation stacks into a staircase. Plain shells (bash/zsh) don't auto-indent, so this only bites in editors.
+
+Two opt-in modes handle it (off by default, since each is target-specific):
+
+- **Bracketed paste — terminals & vim.** Wraps the keystrokes in bracketed-paste markers (`ESC[200~` … `ESC[201~`), which tells vim/readline "this is a paste": no auto-indent, and a multi-line command isn't executed line-by-line — it waits for you to press Return. Needs a target that supports bracketed paste (most modern terminals, shells, and vim do).
+- **Overwrite indent — code editors.** After each Return, Peck selects back to the start of the line (⇧⌘←) so the editor's auto-indent is replaced by the text's real indentation. Works best in Cocoa-based editors where ⌘← goes to the true line start.
+
+If a multi-line paste comes out as a staircase, pick the mode matching your target; leave it off for plain shells.
 
 ## Notes for the usual suspects
 

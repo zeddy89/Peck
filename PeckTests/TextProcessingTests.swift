@@ -108,4 +108,58 @@ final class TextProcessingTests: XCTestCase {
         XCTAssertTrue(TextNormalizer.sameWords("Café résumé!", "cafe resume"))
         XCTAssertFalse(TextNormalizer.sameWords("hello world", "hello there"))
     }
+
+    // MARK: - typingPlan / auto-indent workaround
+
+    func testPlanNoneMatchesPlainKeys() {
+        let plan = TextProcessing.typingPlan(for: "a\nb", workaround: .none,
+                                             stripTrailingNewline: false, appendReturn: false)
+        XCTAssertEqual(plan, [.key(.literal("a")), .key(.returnKey), .key(.literal("b"))])
+    }
+
+    func testPlanBracketedPasteWrapsContentInMarkers() {
+        let plan = TextProcessing.typingPlan(for: "ab", workaround: .bracketedPaste,
+                                             stripTrailingNewline: false, appendReturn: false)
+        XCTAssertEqual(plan, [
+            // ESC [ 2 0 0 ~
+            .escape, .key(.literal("[")), .key(.literal("2")), .key(.literal("0")),
+            .key(.literal("0")), .key(.literal("~")),
+            .key(.literal("a")), .key(.literal("b")),
+            // ESC [ 2 0 1 ~
+            .escape, .key(.literal("[")), .key(.literal("2")), .key(.literal("0")),
+            .key(.literal("1")), .key(.literal("~")),
+        ])
+    }
+
+    func testPlanBracketedPasteAppendReturnLandsAfterCloseMarker() {
+        let plan = TextProcessing.typingPlan(for: "x", workaround: .bracketedPaste,
+                                             stripTrailingNewline: false, appendReturn: true)
+        XCTAssertEqual(plan.last, .key(.returnKey))
+        // The Return is outside the closing marker (which ends with "~").
+        XCTAssertEqual(plan[plan.count - 2], .key(.literal("~")))
+    }
+
+    func testPlanOverwriteIndentSelectsLineStartAfterEachReturn() {
+        let plan = TextProcessing.typingPlan(for: "a\n  b", workaround: .overwriteIndent,
+                                             stripTrailingNewline: false, appendReturn: false)
+        XCTAssertEqual(plan, [
+            .key(.literal("a")),
+            .key(.returnKey), .selectLineStart,
+            .key(.literal(" ")), .key(.literal(" ")), .key(.literal("b")),
+        ])
+    }
+
+    func testPlanEmptyContentIsEmpty() {
+        XCTAssertTrue(TextProcessing.typingPlan(for: "", workaround: .bracketedPaste,
+                                                stripTrailingNewline: false, appendReturn: false).isEmpty)
+        // A stripped-to-empty string with no appended Return also yields nothing.
+        XCTAssertTrue(TextProcessing.typingPlan(for: "\n", workaround: .bracketedPaste,
+                                                stripTrailingNewline: true, appendReturn: false).isEmpty)
+    }
+
+    func testPlanRespectsStripTrailingNewline() {
+        let plan = TextProcessing.typingPlan(for: "cmd\n", workaround: .none,
+                                             stripTrailingNewline: true, appendReturn: false)
+        XCTAssertEqual(plan, [.key(.literal("c")), .key(.literal("m")), .key(.literal("d"))])
+    }
 }

@@ -9,6 +9,28 @@ enum TypedKey: Equatable {
     case literal(Character)
 }
 
+/// A single step in a typing plan. Beyond plain keys, a plan can inject the
+/// Escape key (for bracketed-paste markers) or a "select back to line start"
+/// chord (to overwrite an editor's auto-indent).
+enum TypingInstruction: Equatable {
+    case key(TypedKey)
+    case escape          // the physical Escape key (keycode 53)
+    case selectLineStart // Shift+Cmd+Left: select the auto-indent, to be typed over
+}
+
+/// How to defeat a target's auto-indent when typing multi-line text. Both are
+/// opt-in and target-specific — the default types the clipboard verbatim.
+enum IndentWorkaround: Int {
+    case none = 0
+    /// Wrap the text in bracketed-paste markers (ESC[200~ … ESC[201~) so a
+    /// terminal/vim/readline treats it as a paste: no auto-indent, and multi-line
+    /// input isn't executed line-by-line.
+    case bracketedPaste = 1
+    /// After each Return, select back to the start of the line so the editor's
+    /// auto-indent is replaced by the text's real indentation. For GUI code editors.
+    case overwriteIndent = 2
+}
+
 enum TextProcessing {
 
     /// Classify a single character into the key action `Typist` will emit.
@@ -42,6 +64,54 @@ enum TextProcessing {
             keys.append(.returnKey)
         }
         return keys
+    }
+
+    /// The full ordered plan `Typist` executes, incorporating the auto-indent
+    /// workaround. `.none` is exactly `keySequence` wrapped as `.key`s.
+    static func typingPlan(for rawText: String,
+                           workaround: IndentWorkaround,
+                           stripTrailingNewline: Bool,
+                           appendReturn: Bool) -> [TypingInstruction] {
+        let text = preparedText(for: rawText, stripTrailingNewline: stripTrailingNewline)
+        let content = text.map(classify)
+
+        // Nothing to type (and no Return to append) → empty plan, so bracketed-paste
+        // markers aren't emitted around empty content.
+        if content.isEmpty && !appendReturn {
+            return []
+        }
+
+        var plan: [TypingInstruction] = []
+        switch workaround {
+        case .none:
+            plan = content.map { .key($0) }
+        case .bracketedPaste:
+            plan += bracketMarker(open: true)
+            plan += content.map { .key($0) }
+            plan += bracketMarker(open: false)
+        case .overwriteIndent:
+            for key in content {
+                plan.append(.key(key))
+                if key == .returnKey {
+                    plan.append(.selectLineStart)
+                }
+            }
+        }
+
+        if appendReturn {
+            // The trailing Return executes/finalizes — for bracketed paste it lands
+            // *after* the closing marker, so a shell runs the pasted command.
+            plan.append(.key(.returnKey))
+        }
+        return plan
+    }
+
+    /// ESC [ 2 0 0 ~ (open) or ESC [ 2 0 1 ~ (close).
+    private static func bracketMarker(open: Bool) -> [TypingInstruction] {
+        let third: Character = open ? "0" : "1"
+        return [.escape,
+                .key(.literal("[")), .key(.literal("2")), .key(.literal("0")),
+                .key(.literal(third)), .key(.literal("~"))]
     }
 
     /// The text `Typist` will actually iterate: normalized line breaks, with a

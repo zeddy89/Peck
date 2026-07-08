@@ -36,6 +36,20 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.largePasteThreshold, 1000)
         XCTAssertFalse(prefs.pressReturnAfterTyping)
         XCTAssertTrue(prefs.stripTrailingNewline)
+        XCTAssertEqual(prefs.indentWorkaround, .none)
+    }
+
+    func testIndentWorkaroundRoundTrip() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.indentWorkaround = .bracketedPaste
+        XCTAssertEqual(Preferences(defaults: defaults).indentWorkaround, .bracketedPaste)
+        prefs.indentWorkaround = .overwriteIndent
+        XCTAssertEqual(Preferences(defaults: defaults).indentWorkaround, .overwriteIndent)
+    }
+
+    func testIndentWorkaroundFallsBackForUnknownRawValue() {
+        defaults.set(999, forKey: "indentWorkaround")
+        XCTAssertEqual(Preferences(defaults: defaults).indentWorkaround, .none)
     }
 
     func testNewSettingsRoundTrip() {

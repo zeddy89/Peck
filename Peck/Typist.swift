@@ -65,12 +65,13 @@ final class Typist {
 
     private func run(_ rawText: String, generation: Int) {
         let prefs = Preferences.shared
-        let keys = TextProcessing.keySequence(
+        let plan = TextProcessing.typingPlan(
             for: rawText,
+            workaround: prefs.indentWorkaround,
             stripTrailingNewline: prefs.stripTrailingNewline,
             appendReturn: prefs.pressReturnAfterTyping)
 
-        guard !keys.isEmpty else { return }
+        guard !plan.isEmpty else { return }
 
         let source = CGEventSource(stateID: .combinedSessionState)
         let delayMicroseconds = UInt32(max(0, prefs.keystrokeDelayMs)) * 1_000
@@ -79,7 +80,7 @@ final class Typist {
         setTyping(true)
         defer { setTyping(false) }
 
-        for key in keys {
+        for instruction in plan {
             if isCancelled(generation) {
                 // A character was typed atomically (press() balances its own
                 // modifiers), so nothing should be held — but release defensively
@@ -89,12 +90,35 @@ final class Typist {
                 break
             }
             autoreleasepool {
-                emit(key, source: source, mapper: mapper)
+                execute(instruction, source: source, mapper: mapper)
             }
             if delayMicroseconds > 0 {
                 usleep(delayMicroseconds)
             }
         }
+    }
+
+    private func execute(_ instruction: TypingInstruction, source: CGEventSource?, mapper: KeyMapper?) {
+        switch instruction {
+        case .key(let key):
+            emit(key, source: source, mapper: mapper)
+        case .escape:
+            press(keyCode: CGKeyCode(kVK_Escape), flags: [], source: source)
+        case .selectLineStart:
+            selectLineStart(source: source)
+        }
+    }
+
+    /// Shift+Cmd+Left — select from the cursor back to the start of the line, so the
+    /// next characters typed replace an editor's auto-indent whitespace.
+    private func selectLineStart(source: CGEventSource?) {
+        let flags: CGEventFlags = [.maskShift, .maskCommand]
+        postKey(CGKeyCode(kVK_Command), down: true, flags: flags, source: source)
+        postKey(CGKeyCode(kVK_Shift), down: true, flags: flags, source: source)
+        postKey(CGKeyCode(kVK_LeftArrow), down: true, flags: flags, source: source)
+        postKey(CGKeyCode(kVK_LeftArrow), down: false, flags: flags, source: source)
+        postKey(CGKeyCode(kVK_Shift), down: false, flags: [], source: source)
+        postKey(CGKeyCode(kVK_Command), down: false, flags: [], source: source)
     }
 
     private func setTyping(_ typing: Bool) {

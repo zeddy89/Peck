@@ -11,6 +11,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let keyDelayField = NSTextField()
     private let thresholdField = NSTextField()
     private let modePopup = NSPopUpButton()
+    private let indentPopup = NSPopUpButton()
     private let hotkeyCheckbox = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
     private let recorderView = HotkeyRecorderView(
         keyCode: Preferences.shared.hotkeyKeyCode,
@@ -24,7 +25,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 440),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 500),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false)
@@ -65,6 +66,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             "Unicode — broadest character support",
         ])
 
+        // Order must match IndentWorkaround's raw values (none / bracketedPaste / overwriteIndent).
+        indentPopup.addItems(withTitles: [
+            "Off — type exactly",
+            "Bracketed paste — terminals & vim",
+            "Overwrite indent — code editors",
+        ])
+
         hotkeyCheckbox.target = self
         hotkeyCheckbox.action = #selector(hotkeyEnableToggled)
 
@@ -86,10 +94,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             + "which remote consoles expect. Characters it can't map fall back to Unicode "
             + "injection automatically. Esc or the hotkey aborts an in-progress paste.")
 
+        let indentCaption = caption(
+            "Fixes double-indentation when a target auto-indents what Peck types. "
+            + "Bracketed paste suits terminals/vim; overwrite indent suits GUI code "
+            + "editors. Leave off for plain shells.")
+
         let grid = NSGridView(views: [
             [label("Delay before typing (ms):"), preDelayField],
             [label("Keystroke delay (ms):"), keyDelayField],
             [label("Typing mode:"), modePopup],
+            [label("Auto-indent workaround:"), indentPopup],
+            [NSGridCell.emptyContentView, indentCaption],
             [label("Confirm paste over (chars):"), thresholdField],
             [NSGridCell.emptyContentView, thresholdHint],
             [label("Global hotkey:"), hotkeyCheckbox],
@@ -115,6 +130,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             thresholdField.widthAnchor.constraint(equalToConstant: 80),
             thresholdHint.widthAnchor.constraint(lessThanOrEqualToConstant: 300),
             modeCaption.widthAnchor.constraint(lessThanOrEqualToConstant: 300),
+            indentCaption.widthAnchor.constraint(lessThanOrEqualToConstant: 300),
         ])
     }
 
@@ -165,6 +181,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         keyDelayField.integerValue = prefs.keystrokeDelayMs
         thresholdField.integerValue = prefs.largePasteThreshold
         modePopup.selectItem(at: prefs.typingMode.rawValue)
+        indentPopup.selectItem(at: prefs.indentWorkaround.rawValue)
         hotkeyCheckbox.state = prefs.hotkeyEnabled ? .on : .off
         recorderView.set(keyCode: prefs.hotkeyKeyCode, carbonModifiers: prefs.hotkeyCarbonModifiers)
         recorderView.isEnabledForRecording = prefs.hotkeyEnabled
@@ -179,6 +196,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         prefs.keystrokeDelayMs = keyDelayField.integerValue
         prefs.largePasteThreshold = thresholdField.integerValue
         prefs.typingMode = Preferences.TypingMode(rawValue: modePopup.indexOfSelectedItem) ?? .keycodes
+        prefs.indentWorkaround = IndentWorkaround(rawValue: indentPopup.indexOfSelectedItem) ?? .none
         prefs.pressReturnAfterTyping = pressReturnCheckbox.state == .on
         prefs.stripTrailingNewline = stripNewlineCheckbox.state == .on
         // Hotkey enable and shortcut are applied immediately via their own actions.

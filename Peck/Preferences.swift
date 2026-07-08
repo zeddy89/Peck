@@ -26,6 +26,7 @@ final class Preferences {
         static let largePasteThreshold = "largePasteThreshold"
         static let pressReturnAfterTyping = "pressReturnAfterTyping"
         static let stripTrailingNewline = "stripTrailingNewline"
+        static let indentWorkaround = "indentWorkaround"
     }
 
     private let defaults: UserDefaults
@@ -44,6 +45,7 @@ final class Preferences {
             Keys.largePasteThreshold: 1000,
             Keys.pressReturnAfterTyping: false,
             Keys.stripTrailingNewline: true,
+            Keys.indentWorkaround: IndentWorkaround.none.rawValue,
         ])
     }
 
@@ -99,5 +101,11 @@ final class Preferences {
     var stripTrailingNewline: Bool {
         get { defaults.bool(forKey: Keys.stripTrailingNewline) }
         set { defaults.set(newValue, forKey: Keys.stripTrailingNewline) }
+    }
+
+    /// Opt-in workaround for targets that auto-indent what Peck types.
+    var indentWorkaround: IndentWorkaround {
+        get { IndentWorkaround(rawValue: defaults.integer(forKey: Keys.indentWorkaround)) ?? .none }
+        set { defaults.set(newValue.rawValue, forKey: Keys.indentWorkaround) }
     }
 }
