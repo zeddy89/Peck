@@ -11,6 +11,12 @@ build_app() {
 
     rm -rf "$app"
     mkdir -p "$app/Contents/MacOS"
+    mkdir -p "$app/Contents/Resources"
+
+    # App icon (if present in the source tree).
+    if [[ -f Peck/AppIcon.icns ]]; then
+        cp Peck/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
+    fi
 
     cat > "$app/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -19,6 +25,8 @@ build_app() {
 <dict>
 	<key>CFBundleExecutable</key>
 	<string>Peck</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>dev.homelab.peck</string>
 	<key>CFBundleName</key>
