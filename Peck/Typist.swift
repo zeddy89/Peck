@@ -26,10 +26,15 @@ final class Typist {
     var onTypingStateChange: ((Bool) -> Void)?
 
     /// Typing runs on its own serial queue so it never blocks the main thread and
-    /// so a single in-flight job can be cancelled cleanly.
+    /// so an in-flight job can be cancelled cleanly.
     private let queue = DispatchQueue(label: "dev.homelab.peck.typist", qos: .userInitiated)
     private let lock = NSLock()
-    private var _cancelled = false
+    // Each `type()` gets a monotonically increasing generation. `cancel()` records
+    // the newest generation issued so far as cancelled, so a run only aborts for a
+    // cancel that targets it (or a later one) — a second paste can never reset the
+    // flag out from under a pending abort, and a stale cancel can't kill a new run.
+    private var _generation = 0
+    private var _cancelledThrough = 0
     private var _isTyping = false
 
     /// Whether a typing job is currently running. Used to route the global hotkey
@@ -39,20 +44,26 @@ final class Typist {
     /// Enqueue clipboard text to be typed. Returns immediately; typing proceeds on
     /// the dedicated queue and can be stopped with `cancel()`.
     func type(_ rawText: String) {
-        lock.withLock { _cancelled = false }
+        let generation = lock.withLock { () -> Int in
+            _generation += 1
+            return _generation
+        }
         queue.async { [weak self] in
-            self?.run(rawText)
+            self?.run(rawText, generation: generation)
         }
     }
 
-    /// Request that in-progress typing stop as soon as possible. Thread-safe.
+    /// Request that in-progress (and already-queued) typing stop as soon as
+    /// possible. Thread-safe.
     func cancel() {
-        lock.withLock { _cancelled = true }
+        lock.withLock { _cancelledThrough = _generation }
     }
 
-    private var isCancelled: Bool { lock.withLock { _cancelled } }
+    private func isCancelled(_ generation: Int) -> Bool {
+        lock.withLock { _cancelledThrough >= generation }
+    }
 
-    private func run(_ rawText: String) {
+    private func run(_ rawText: String, generation: Int) {
         let prefs = Preferences.shared
         let keys = TextProcessing.keySequence(
             for: rawText,
@@ -69,7 +80,7 @@ final class Typist {
         defer { setTyping(false) }
 
         for key in keys {
-            if isCancelled {
+            if isCancelled(generation) {
                 // A character was typed atomically (press() balances its own
                 // modifiers), so nothing should be held — but release defensively
                 // so an aborted shifted/optioned keystroke can never strand a

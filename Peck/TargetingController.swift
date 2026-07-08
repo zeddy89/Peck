@@ -14,6 +14,15 @@ final class TargetingController {
 
     func arm() {
         guard !isArmed else { return }
+
+        // Never overlap an in-flight paste: while typing, arming instead aborts,
+        // matching the hotkey and status-item click. Overlapping would fire a second
+        // focus-click mid-type and land the rest of the first paste on the new target.
+        if Typist.shared.isTyping {
+            Typist.shared.cancel()
+            return
+        }
+
         guard AccessibilityGate.check(prompt: true) else { return }
 
         // Another app holding Secure Event Input (a password field, a locked
@@ -112,7 +121,16 @@ final class TargetingController {
             + "whatever holds it (often a password field or the lock screen)."
         alert.addButton(withTitle: "Arm Anyway")
         alert.addButton(withTitle: "Cancel")
+        makeCancelDefault(alert)
         return runModalConfirmation(alert)
+    }
+
+    /// Make Cancel the keyboard default so a stray Return dismisses a guardrail
+    /// safely instead of confirming the very action it exists to prevent.
+    private func makeCancelDefault(_ alert: NSAlert) {
+        // buttons[0] is the affirmative (added first), buttons[1] is Cancel.
+        alert.buttons.first?.keyEquivalent = ""
+        alert.buttons.dropFirst().first?.keyEquivalent = "\r"
     }
 
     private func confirmLargePaste(_ text: String) -> Bool {
@@ -125,6 +143,7 @@ final class TargetingController {
             + "into wherever you clicked — each newline runs as Return in a console."
         alert.addButton(withTitle: "Type It")
         alert.addButton(withTitle: "Cancel")
+        makeCancelDefault(alert)
         return runModalConfirmation(alert)
     }
 

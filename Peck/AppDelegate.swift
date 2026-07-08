@@ -50,11 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         settings.onHotkeyToggle = { [weak self] enabled in
-            enabled ? self?.hotkey.register() : self?.hotkey.unregister()
+            if enabled { self?.hotkey.register() } else { self?.hotkey.unregister() }
         }
         settings.onHotkeyChanged = { [weak self] in
-            if Preferences.shared.hotkeyEnabled {
-                self?.hotkey.reregister()
+            guard let self, Preferences.shared.hotkeyEnabled else { return }
+            if !self.hotkey.reregister() {
+                // The combo is likely already claimed by another app.
+                NSSound.beep()
             }
         }
 
@@ -105,13 +107,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
 
-        let armTitle = targeting.isArmed ? "Cancel Targeting" : "Arm Targeting"
+        let armTitle: String
+        if Typist.shared.isTyping {
+            armTitle = "Abort Typing"
+        } else {
+            armTitle = targeting.isArmed ? "Cancel Targeting" : "Arm Targeting"
+        }
         let armItem = NSMenuItem(title: armTitle, action: #selector(toggleTargeting), keyEquivalent: "")
         armItem.target = self
         menu.addItem(armItem)
 
         if Preferences.shared.hotkeyEnabled {
-            let hint = NSMenuItem(title: "Global hotkey:  ⌃⌥⌘V", action: nil, keyEquivalent: "")
+            let shortcut = HotkeyFormatter.displayString(
+                keyCode: Preferences.shared.hotkeyKeyCode,
+                carbonModifiers: Preferences.shared.hotkeyCarbonModifiers)
+            let hint = NSMenuItem(title: "Global hotkey:  \(shortcut)", action: nil, keyEquivalent: "")
             hint.isEnabled = false
             menu.addItem(hint)
         }
@@ -157,11 +167,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Actions
 
     @objc private func toggleTargeting() {
-        targeting.toggle()
+        if Typist.shared.isTyping {
+            Typist.shared.cancel()
+        } else {
+            targeting.toggle()
+        }
     }
 
     @objc private func openSettings() {
         NSApp.activate(ignoringOtherApps: true)
+        settings.refresh() // re-sync externally-changeable state (e.g. launch-at-login)
         settings.showWindow(nil)
         settings.window?.makeKeyAndOrderFront(nil)
     }

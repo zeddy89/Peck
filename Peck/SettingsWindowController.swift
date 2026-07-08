@@ -153,6 +153,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - Load / save
 
+    /// Re-read all controls from the current state. Called before the window is
+    /// shown again so externally-changeable state (launch-at-login) isn't stale.
+    func refresh() {
+        loadValues()
+    }
+
     private func loadValues() {
         let prefs = Preferences.shared
         preDelayField.integerValue = prefs.preTypeDelayMs

@@ -63,6 +63,12 @@ final class HotkeyRecorderView: NSView {
 
     override var acceptsFirstResponder: Bool { isEnabledForRecording }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        // CALayer holds a static CGColor, so re-resolve the border on theme changes.
+        updateAppearance()
+    }
+
     // MARK: - Recording
 
     override func mouseDown(with event: NSEvent) {

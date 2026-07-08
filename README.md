@@ -9,11 +9,14 @@ ClickPaste, but for macOS. A menu bar utility that types your clipboard as real 
 3. The screen dims with a crosshair. Click your target: a console window, a login prompt, a text field.
 4. Peck clicks that spot to focus it, waits a beat, then types your clipboard character by character as synthetic keyboard events.
 
-Press Esc while armed to cancel.
+**Aborting.** Press **Esc** while the crosshair is up to cancel before you pick a target. While Peck is *typing*, press **Esc**, press the **global hotkey**, or **click the menu bar icon** to stop immediately — any held modifier is released so nothing sticks down.
 
 ## Building
 
-Open `Peck.xcodeproj` in Xcode (14 or later, macOS 13+ target), select the Peck scheme, and Product → Run. That's it. No dependencies, no packages, no storyboards, no sandbox.
+Open `Peck.xcodeproj` in Xcode (15 or later, macOS 13+ target), select the shared **Peck** scheme, and Product → Run. That's it. No dependencies, no packages, no storyboards, no sandbox.
+
+- **Build:** `xcodebuild -project Peck.xcodeproj -scheme Peck -configuration Debug build`
+- **Test:** `xcodebuild -project Peck.xcodeproj -scheme Peck test` — the `PeckTests` target is a host-less logic-test bundle covering the coordinate flip, key/newline dispatch, preferences, hotkey formatting, and layout-aware key mapping. It never launches the app, so it runs headless.
 
 No Xcode installed, or the project file misbehaves? There's a fallback:
 
@@ -21,7 +24,7 @@ No Xcode installed, or the project file misbehaves? There's a fallback:
 ./Scripts/build-no-xcode.sh
 ```
 
-That produces `build/Peck.app` with plain `swiftc` (needs Command Line Tools). For Intel Macs, change the `-target` triple in the script to `x86_64-apple-macosx13.0`.
+That produces `build/Peck.app` with plain `swiftc` (needs Command Line Tools). It auto-detects your architecture with `uname -m`, so it builds natively on Apple Silicon (arm64) and Intel (x86_64) without editing the triple. If your working copy lives in an iCloud-synced `~/Documents`, the script clears the `com.apple.FinderInfo` xattr and retries `codesign` so the sync layer's re-stamping doesn't break signing.
 
 ## Permissions
 
@@ -29,10 +32,11 @@ Peck posts synthetic mouse and keyboard events, which requires **Accessibility**
 
 System Settings → Privacy & Security → Accessibility → enable Peck.
 
-It will prompt on first launch. Two gotchas worth knowing:
+It will prompt on first launch. Three things worth knowing:
 
 - **Rebuilds can invalidate the grant.** Ad hoc code signatures change on every build, and TCC ties the grant to the signature. If keystrokes silently stop working after a rebuild, remove Peck from the Accessibility list and re-add it, or reset with `tccutil reset Accessibility dev.homelab.peck`. Setting a real development team in Signing & Capabilities makes the signature stable and avoids this entirely.
 - **Run it from a stable location.** Move the built app to `/Applications` before granting permission so the path and grant stay consistent.
+- **Revoking Accessibility mid-session fails silently.** If you turn Peck off in System Settings while it's running, arming still shows the crosshair but no keystrokes land (and the Esc-abort monitor stops seeing keys). Quit and relaunch after re-granting.
 
 No sandbox, no network access, no clipboard history, no persistence. It reads the pasteboard once per paste, at the moment you click.
 
@@ -42,10 +46,16 @@ Right-click the menu bar icon → Settings.
 
 | Setting | Default | Notes |
 |---|---|---|
-| Delay before typing | 400 ms | Time between the focus click and the first keystroke. Slow remote consoles need the focus event to round-trip; bump this to 800 to 1000 ms for laggy VPN + noVNC combos. |
-| Keystroke delay | 15 ms | Per-character pacing. If a console drops or reorders characters (classic noVNC-over-WAN behavior), raise to 25 to 40 ms. |
+| Delay before typing | 400 ms | Time between the focus click and the first keystroke. Slow remote consoles need the focus event to round-trip; bump this to 800–1000 ms for laggy VPN + noVNC combos. |
+| Keystroke delay | 15 ms | Per-character pacing. If a console drops or reorders characters (classic noVNC-over-WAN behavior), raise to 25–40 ms. |
 | Typing mode | Keycodes | See below. |
-| Global hotkey | On | ⌃⌥⌘V toggles targeting from anywhere. |
+| Confirm paste over | 1000 chars | Above this many characters, Peck shows the character and line count and asks before typing — the guardrail against pecking a 40 KB file into a root shell. Set to `0` to disable. |
+| Global hotkey | On, ⌃⌥⌘V | Toggle it on/off and record a new shortcut. Click the recorder, then press a modifier + key combination (needs at least one of ⌘/⌥/⌃). |
+| Press Return after typing | Off | Send one Return once the clipboard has been typed. |
+| Strip trailing newline from clipboard | On | Terminal copies almost always drag a trailing newline along, and in a console that newline runs the last command. This drops a single trailing newline before typing. |
+| Launch at login | Off | Registers Peck as a login item via `SMAppService`. The checkbox reflects the real registration state. |
+
+**Secure Input.** If another app has *Secure Event Input* enabled when you arm (a password field, the lock screen, some terminals), Peck warns you that keystrokes may be swallowed and lets you proceed anyway.
 
 ## Typing modes
 
@@ -60,30 +70,38 @@ One caveat for the keycode mode: the *guest* VM's keyboard layout matters too. I
 - **Proxmox noVNC / vSphere web console:** keycode mode, keystroke delay 25 ms or higher if characters drop. Great for root passwords into fresh VMs before SSH is up.
 - **RDP (Windows App / Microsoft Remote Desktop):** either mode usually works; keycodes is safer for login screens.
 - **Password fields that block paste:** they can't block keystrokes. Keycode mode looks exactly like typing because it is.
-- **Multi-line pastes:** newlines are sent as Return, tabs as Tab, and CRLF collapses to a single Return. Be careful pasting multi-line text into a shell; each newline executes. That's a feature until it isn't.
+- **Multi-line pastes:** newlines are sent as Return, tabs as Tab, and CRLF collapses to a single Return. Be careful pasting multi-line text into a shell; each newline executes. Keep "Strip trailing newline" on so the *last* line doesn't auto-run, and leave "Press Return after typing" off unless you want it to.
 
 ## Layout
 
 ```
 Peck/
 ├── Peck.xcodeproj/
+│   └── xcshareddata/xcschemes/Peck.xcscheme   Shared scheme (build + test)
 ├── Peck/
 │   ├── main.swift                     Entry point, accessory activation policy
-│   ├── AppDelegate.swift              Status item, menu, wiring
-│   ├── TargetingController.swift      Arm/pick/click/type flow, coordinate flip
+│   ├── AppDelegate.swift              Status item, menu, wiring, abort routing
+│   ├── TargetingController.swift      Arm/pick/click/type flow, confirmation alerts
+│   ├── CoordinateMath.swift           Pure Cocoa→CGEvent Y-flip (unit-tested)
 │   ├── OverlayWindow.swift            Per-screen crosshair overlay
-│   ├── Typist.swift                   Keystroke synthesis, both engines
+│   ├── Typist.swift                   Keystroke synthesis, both engines, cancelable
+│   ├── TextProcessing.swift           Line-break/tab classification, trailing prep
 │   ├── KeyMapper.swift                Layout-aware char → keycode via UCKeyTranslate
-│   ├── HotkeyManager.swift            Carbon global hotkey (⌃⌥⌘V)
+│   ├── HotkeyManager.swift            Carbon global hotkey (configurable)
+│   ├── HotkeyRecorderView.swift       AppKit shortcut recorder
+│   ├── HotkeyFormatter.swift          Pure hotkey → "⌃⌥⌘V" formatting (unit-tested)
+│   ├── KeyMonitor.swift               Esc-to-abort monitor (active while typing)
+│   ├── LoginItem.swift                Launch-at-login via SMAppService
 │   ├── Preferences.swift              UserDefaults-backed settings
 │   ├── SettingsWindowController.swift Programmatic settings UI
 │   └── AccessibilityGate.swift        AX permission check/prompt
+├── PeckTests/                         XCTest logic tests (host-less)
 └── Scripts/
-    └── build-no-xcode.sh              swiftc fallback build
+    └── build-no-xcode.sh              swiftc fallback build (arch auto-detected)
 ```
 
 Rename freely: change `PRODUCT_BUNDLE_IDENTIFIER` and the display name in the target's build settings, and update the `tccutil` command above to match.
 
 ## Launch at login
 
-System Settings → General → Login Items → add Peck. (Deliberately not automated to keep the app dependency-free and obvious about what it does.)
+Toggle **Launch at login** in Settings. It uses `SMAppService.mainApp` (macOS 13+) with no helper bundle and no third-party dependency. For the registration to stick, run Peck from a stable, signed location (e.g. `/Applications`); an ad hoc build in a temporary directory may be refused by the login-item daemon.

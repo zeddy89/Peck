@@ -12,8 +12,10 @@ final class HotkeyManager {
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
 
-    func register() {
-        guard hotKeyRef == nil else { return }
+    /// Returns whether the hotkey is bound after the call.
+    @discardableResult
+    func register() -> Bool {
+        guard hotKeyRef == nil else { return true }
 
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -42,7 +44,7 @@ final class HotkeyManager {
 
             guard installStatus == noErr else {
                 handlerRef = nil
-                return
+                return false
             }
         }
 
@@ -61,7 +63,9 @@ final class HotkeyManager {
 
         if registerStatus != noErr {
             hotKeyRef = nil
+            return false
         }
+        return true
     }
 
     func unregister() {
@@ -76,10 +80,11 @@ final class HotkeyManager {
     }
 
     /// Re-read the hotkey from Preferences and rebind. Call after the user records
-    /// a new shortcut.
-    func reregister() {
+    /// a new shortcut. Returns whether the new binding took.
+    @discardableResult
+    func reregister() -> Bool {
         unregister()
-        register()
+        return register()
     }
 
     deinit {
