@@ -1,0 +1,399 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B00000000000000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000001 /* main.swift */; };
+		B00000000000000000000002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000002 /* AppDelegate.swift */; };
+		B00000000000000000000003 /* TargetingController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* TargetingController.swift */; };
+		B00000000000000000000004 /* OverlayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000004 /* OverlayWindow.swift */; };
+		B00000000000000000000005 /* Typist.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000005 /* Typist.swift */; };
+		B00000000000000000000006 /* KeyMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000006 /* KeyMapper.swift */; };
+		B00000000000000000000007 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000007 /* HotkeyManager.swift */; };
+		B00000000000000000000008 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000008 /* Preferences.swift */; };
+		B00000000000000000000009 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000009 /* SettingsWindowController.swift */; };
+		B0000000000000000000000A /* AccessibilityGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000A /* AccessibilityGate.swift */; };
+		B0000000000000000000000B /* CoordinateMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000B /* CoordinateMath.swift */; };
+		B0000000000000000000000C /* TextProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000C /* TextProcessing.swift */; };
+		B000000000000000000000D0 /* CoordinateMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000000D0 /* CoordinateMathTests.swift */; };
+		B000000000000000000000D1 /* TextProcessingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000000D1 /* TextProcessingTests.swift */; };
+		B000000000000000000000D2 /* PreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000000D2 /* PreferencesTests.swift */; };
+		B000000000000000000000D3 /* KeyMapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000000D3 /* KeyMapperTests.swift */; };
+		B000000000000000000000E1 /* CoordinateMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000B /* CoordinateMath.swift */; };
+		B000000000000000000000E2 /* TextProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000C /* TextProcessing.swift */; };
+		B000000000000000000000E3 /* KeyMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000006 /* KeyMapper.swift */; };
+		B000000000000000000000E4 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000008 /* Preferences.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		F00000000000000000000001 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		F00000000000000000000002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		F00000000000000000000003 /* TargetingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetingController.swift; sourceTree = "<group>"; };
+		F00000000000000000000004 /* OverlayWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindow.swift; sourceTree = "<group>"; };
+		F00000000000000000000005 /* Typist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typist.swift; sourceTree = "<group>"; };
+		F00000000000000000000006 /* KeyMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyMapper.swift; sourceTree = "<group>"; };
+		F00000000000000000000007 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
+		F00000000000000000000008 /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
+		F00000000000000000000009 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
+		F0000000000000000000000A /* AccessibilityGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityGate.swift; sourceTree = "<group>"; };
+		F0000000000000000000000B /* CoordinateMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateMath.swift; sourceTree = "<group>"; };
+		F0000000000000000000000C /* TextProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextProcessing.swift; sourceTree = "<group>"; };
+		F000000000000000000000D0 /* CoordinateMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateMathTests.swift; sourceTree = "<group>"; };
+		F000000000000000000000D1 /* TextProcessingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextProcessingTests.swift; sourceTree = "<group>"; };
+		F000000000000000000000D2 /* PreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesTests.swift; sourceTree = "<group>"; };
+		F000000000000000000000D3 /* KeyMapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyMapperTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000010 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		F000000000000000000000AA /* Peck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Peck.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F000000000000000000000BB /* PeckTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PeckTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		800000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		800000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		700000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000010 /* README.md */,
+				700000000000000000000002 /* Peck */,
+				700000000000000000000004 /* PeckTests */,
+				700000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		700000000000000000000002 /* Peck */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000001 /* main.swift */,
+				F00000000000000000000002 /* AppDelegate.swift */,
+				F00000000000000000000003 /* TargetingController.swift */,
+				F00000000000000000000004 /* OverlayWindow.swift */,
+				F00000000000000000000005 /* Typist.swift */,
+				F00000000000000000000006 /* KeyMapper.swift */,
+				F00000000000000000000007 /* HotkeyManager.swift */,
+				F00000000000000000000008 /* Preferences.swift */,
+				F00000000000000000000009 /* SettingsWindowController.swift */,
+				F0000000000000000000000A /* AccessibilityGate.swift */,
+				F0000000000000000000000B /* CoordinateMath.swift */,
+				F0000000000000000000000C /* TextProcessing.swift */,
+			);
+			path = Peck;
+			sourceTree = "<group>";
+		};
+		700000000000000000000004 /* PeckTests */ = {
+			isa = PBXGroup;
+			children = (
+				F000000000000000000000D0 /* CoordinateMathTests.swift */,
+				F000000000000000000000D1 /* TextProcessingTests.swift */,
+				F000000000000000000000D2 /* PreferencesTests.swift */,
+				F000000000000000000000D3 /* KeyMapperTests.swift */,
+			);
+			path = PeckTests;
+			sourceTree = "<group>";
+		};
+		700000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F000000000000000000000AA /* Peck.app */,
+				F000000000000000000000BB /* PeckTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		900000000000000000000001 /* Peck */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000006 /* Build configuration list for PBXNativeTarget "Peck" */;
+			buildPhases = (
+				800000000000000000000001 /* Sources */,
+				800000000000000000000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Peck;
+			productName = Peck;
+			productReference = F000000000000000000000AA /* Peck.app */;
+			productType = "com.apple.product-type.application";
+		};
+		900000000000000000000003 /* PeckTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000007 /* Build configuration list for PBXNativeTarget "PeckTests" */;
+			buildPhases = (
+				800000000000000000000003 /* Sources */,
+				800000000000000000000004 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PeckTests;
+			productName = PeckTests;
+			productReference = F000000000000000000000BB /* PeckTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		900000000000000000000002 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					900000000000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					900000000000000000000003 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = A00000000000000000000005 /* Build configuration list for PBXProject "Peck" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 700000000000000000000001;
+			productRefGroup = 700000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				900000000000000000000001 /* Peck */,
+				900000000000000000000003 /* PeckTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		800000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000001 /* main.swift in Sources */,
+				B00000000000000000000002 /* AppDelegate.swift in Sources */,
+				B00000000000000000000003 /* TargetingController.swift in Sources */,
+				B00000000000000000000004 /* OverlayWindow.swift in Sources */,
+				B00000000000000000000005 /* Typist.swift in Sources */,
+				B00000000000000000000006 /* KeyMapper.swift in Sources */,
+				B00000000000000000000007 /* HotkeyManager.swift in Sources */,
+				B00000000000000000000008 /* Preferences.swift in Sources */,
+				B00000000000000000000009 /* SettingsWindowController.swift in Sources */,
+				B0000000000000000000000A /* AccessibilityGate.swift in Sources */,
+				B0000000000000000000000B /* CoordinateMath.swift in Sources */,
+				B0000000000000000000000C /* TextProcessing.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		800000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B000000000000000000000D0 /* CoordinateMathTests.swift in Sources */,
+				B000000000000000000000D1 /* TextProcessingTests.swift in Sources */,
+				B000000000000000000000D2 /* PreferencesTests.swift in Sources */,
+				B000000000000000000000D3 /* KeyMapperTests.swift in Sources */,
+				B000000000000000000000E1 /* CoordinateMath.swift in Sources */,
+				B000000000000000000000E2 /* TextProcessing.swift in Sources */,
+				B000000000000000000000E3 /* KeyMapper.swift in Sources */,
+				B000000000000000000000E4 /* Preferences.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A00000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A00000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		A00000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Peck;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.homelab.peck;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A00000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Peck;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.homelab.peck;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A00000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.homelab.peckTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A00000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.homelab.peckTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00000000000000000000005 /* Build configuration list for PBXProject "Peck" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000001 /* Debug */,
+				A00000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000006 /* Build configuration list for PBXNativeTarget "Peck" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000003 /* Debug */,
+				A00000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000007 /* Build configuration list for PBXNativeTarget "PeckTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000008 /* Debug */,
+				A00000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 900000000000000000000002 /* Project object */;
+}
