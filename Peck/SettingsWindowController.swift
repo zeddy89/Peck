@@ -76,6 +76,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         hotkeyCheckbox.target = self
         hotkeyCheckbox.action = #selector(hotkeyEnableToggled)
 
+        // Apply popup/checkbox changes the moment they're made. Waiting for the
+        // window to close was a trap: change the mode, peck with the window still
+        // open, and the old mode silently runs.
+        for control: NSControl in [modePopup, indentPopup, pressReturnCheckbox, stripNewlineCheckbox] {
+            control.target = self
+            control.action = #selector(applyImmediateSettings)
+        }
+
         recorderView.onCapture = { [weak self] keyCode, carbonModifiers in
             Preferences.shared.hotkeyKeyCode = keyCode
             Preferences.shared.hotkeyCarbonModifiers = carbonModifiers
@@ -147,6 +155,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - Immediate-effect actions
 
+    /// Popups and checkboxes take effect as soon as they're changed. Text fields
+    /// still commit on close (mid-edit values shouldn't apply keystroke-by-keystroke).
+    @objc private func applyImmediateSettings() {
+        let prefs = Preferences.shared
+        prefs.typingMode = Preferences.TypingMode(rawValue: modePopup.indexOfSelectedItem) ?? .keycodes
+        prefs.indentWorkaround = IndentWorkaround(rawValue: indentPopup.indexOfSelectedItem) ?? .none
+        prefs.pressReturnAfterTyping = pressReturnCheckbox.state == .on
+        prefs.stripTrailingNewline = stripNewlineCheckbox.state == .on
+    }
+
     @objc private func hotkeyEnableToggled() {
         let enabled = hotkeyCheckbox.state == .on
         Preferences.shared.hotkeyEnabled = enabled
@@ -195,10 +213,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         prefs.preTypeDelayMs = preDelayField.integerValue
         prefs.keystrokeDelayMs = keyDelayField.integerValue
         prefs.largePasteThreshold = thresholdField.integerValue
-        prefs.typingMode = Preferences.TypingMode(rawValue: modePopup.indexOfSelectedItem) ?? .keycodes
-        prefs.indentWorkaround = IndentWorkaround(rawValue: indentPopup.indexOfSelectedItem) ?? .none
-        prefs.pressReturnAfterTyping = pressReturnCheckbox.state == .on
-        prefs.stripTrailingNewline = stripNewlineCheckbox.state == .on
+        // Popups/checkboxes already applied live; re-apply for belt-and-suspenders.
+        applyImmediateSettings()
         // Hotkey enable and shortcut are applied immediately via their own actions.
     }
 
