@@ -31,6 +31,27 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.keystrokeDelayMs, 15)
         XCTAssertEqual(prefs.typingMode, .keycodes)
         XCTAssertTrue(prefs.hotkeyEnabled)
+        XCTAssertEqual(prefs.hotkeyKeyCode, Preferences.HotkeyDefault.keyCode)
+        XCTAssertEqual(prefs.hotkeyCarbonModifiers, Preferences.HotkeyDefault.carbonModifiers)
+        XCTAssertEqual(prefs.largePasteThreshold, 1000)
+        XCTAssertFalse(prefs.pressReturnAfterTyping)
+        XCTAssertTrue(prefs.stripTrailingNewline)
+    }
+
+    func testNewSettingsRoundTrip() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.hotkeyKeyCode = 40
+        prefs.hotkeyCarbonModifiers = 256
+        prefs.largePasteThreshold = 0
+        prefs.pressReturnAfterTyping = true
+        prefs.stripTrailingNewline = false
+
+        let reader = Preferences(defaults: defaults)
+        XCTAssertEqual(reader.hotkeyKeyCode, 40)
+        XCTAssertEqual(reader.hotkeyCarbonModifiers, 256)
+        XCTAssertEqual(reader.largePasteThreshold, 0)
+        XCTAssertTrue(reader.pressReturnAfterTyping)
+        XCTAssertFalse(reader.stripTrailingNewline)
     }
 
     func testMutationRoundTrip() {

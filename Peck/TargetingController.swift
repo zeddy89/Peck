@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 /// Owns the arm → pick → click → type lifecycle.
 final class TargetingController {
@@ -14,6 +15,13 @@ final class TargetingController {
     func arm() {
         guard !isArmed else { return }
         guard AccessibilityGate.check(prompt: true) else { return }
+
+        // Another app holding Secure Event Input (a password field, a locked
+        // screen, some terminals) swallows synthetic keystrokes. Warn, but let the
+        // user proceed since detection can't tell whether it applies to the target.
+        if IsSecureEventInputEnabled(), !confirmSecureInput() {
+            return
+        }
 
         isArmed = true
 
@@ -65,7 +73,17 @@ final class TargetingController {
         disarm()
 
         let cgPoint = CoordinateConverter.toCG(screenPoint)
-        let text = ClipboardTextReader.read() ?? ""
+        let rawText = ClipboardTextReader.read() ?? ""
+
+        // The guardrail against pecking a huge file into a root shell. Count what
+        // will actually be typed (after the trailing-newline strip).
+        let prepared = TextProcessing.preparedText(
+            for: rawText, stripTrailingNewline: Preferences.shared.stripTrailingNewline)
+        let threshold = Preferences.shared.largePasteThreshold
+        if threshold > 0, prepared.count > threshold, !confirmLargePaste(prepared) {
+            return
+        }
+
         let preTypeDelay = Double(max(0, Preferences.shared.preTypeDelayMs)) / 1000.0
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -76,10 +94,45 @@ final class TargetingController {
 
             MouseClicker.click(at: cgPoint)
 
-            guard !text.isEmpty else { return }
+            guard !rawText.isEmpty else { return }
             Thread.sleep(forTimeInterval: preTypeDelay)
-            Typist.shared.type(text)
+            Typist.shared.type(rawText)
         }
+    }
+
+    // MARK: - Confirmation alerts
+
+    private func confirmSecureInput() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Another app has Secure Input enabled"
+        alert.informativeText = "While Secure Input is active, some apps swallow "
+            + "synthetic keystrokes, so Peck's typing may not reach your target. "
+            + "You can proceed and see, or cancel and try again after dismissing "
+            + "whatever holds it (often a password field or the lock screen)."
+        alert.addButton(withTitle: "Arm Anyway")
+        alert.addButton(withTitle: "Cancel")
+        return runModalConfirmation(alert)
+    }
+
+    private func confirmLargePaste(_ text: String) -> Bool {
+        let lineCount = text.isEmpty ? 0 : TextNormalizer.lineBreakCount(in: text) + 1
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Type \(text.count) characters?"
+        alert.informativeText = "The clipboard is \(text.count) characters across "
+            + "\(lineCount) line\(lineCount == 1 ? "" : "s"). Peck will type all of it "
+            + "into wherever you clicked — each newline runs as Return in a console."
+        alert.addButton(withTitle: "Type It")
+        alert.addButton(withTitle: "Cancel")
+        return runModalConfirmation(alert)
+    }
+
+    /// Bring the (accessory) app forward so the modal alert is visible, then run it.
+    /// Returns true when the user chose the first (affirmative) button.
+    private func runModalConfirmation(_ alert: NSAlert) -> Bool {
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
 

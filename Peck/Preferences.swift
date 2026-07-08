@@ -1,4 +1,5 @@
 import Foundation
+import Carbon.HIToolbox
 
 final class Preferences {
 
@@ -9,11 +10,22 @@ final class Preferences {
         case unicode = 1    // direct character injection (broadest character support)
     }
 
+    /// Default global hotkey: ⌃⌥⌘V.
+    enum HotkeyDefault {
+        static let keyCode = Int(kVK_ANSI_V)
+        static let carbonModifiers = Int(controlKey | optionKey | cmdKey)
+    }
+
     private enum Keys {
         static let preTypeDelayMs = "preTypeDelayMs"
         static let keystrokeDelayMs = "keystrokeDelayMs"
         static let typingMode = "typingMode"
         static let hotkeyEnabled = "hotkeyEnabled"
+        static let hotkeyKeyCode = "hotkeyKeyCode"
+        static let hotkeyCarbonModifiers = "hotkeyCarbonModifiers"
+        static let largePasteThreshold = "largePasteThreshold"
+        static let pressReturnAfterTyping = "pressReturnAfterTyping"
+        static let stripTrailingNewline = "stripTrailingNewline"
     }
 
     private let defaults: UserDefaults
@@ -27,6 +39,11 @@ final class Preferences {
             Keys.keystrokeDelayMs: 15,
             Keys.typingMode: TypingMode.keycodes.rawValue,
             Keys.hotkeyEnabled: true,
+            Keys.hotkeyKeyCode: HotkeyDefault.keyCode,
+            Keys.hotkeyCarbonModifiers: HotkeyDefault.carbonModifiers,
+            Keys.largePasteThreshold: 1000,
+            Keys.pressReturnAfterTyping: false,
+            Keys.stripTrailingNewline: true,
         ])
     }
 
@@ -50,5 +67,37 @@ final class Preferences {
     var hotkeyEnabled: Bool {
         get { defaults.bool(forKey: Keys.hotkeyEnabled) }
         set { defaults.set(newValue, forKey: Keys.hotkeyEnabled) }
+    }
+
+    /// Virtual keycode of the global hotkey's main key.
+    var hotkeyKeyCode: Int {
+        get { defaults.integer(forKey: Keys.hotkeyKeyCode) }
+        set { defaults.set(newValue, forKey: Keys.hotkeyKeyCode) }
+    }
+
+    /// Carbon modifier mask (controlKey/optionKey/shiftKey/cmdKey) of the global hotkey.
+    var hotkeyCarbonModifiers: Int {
+        get { defaults.integer(forKey: Keys.hotkeyCarbonModifiers) }
+        set { defaults.set(newValue, forKey: Keys.hotkeyCarbonModifiers) }
+    }
+
+    /// Above this many characters, arming asks for confirmation before typing.
+    /// 0 disables the guardrail entirely.
+    var largePasteThreshold: Int {
+        get { defaults.integer(forKey: Keys.largePasteThreshold) }
+        set { defaults.set(newValue, forKey: Keys.largePasteThreshold) }
+    }
+
+    /// Press Return once after the clipboard has been typed.
+    var pressReturnAfterTyping: Bool {
+        get { defaults.bool(forKey: Keys.pressReturnAfterTyping) }
+        set { defaults.set(newValue, forKey: Keys.pressReturnAfterTyping) }
+    }
+
+    /// Drop a single trailing newline before typing. Terminal copies almost always
+    /// drag one along, and in a console that newline runs the last command.
+    var stripTrailingNewline: Bool {
+        get { defaults.bool(forKey: Keys.stripTrailingNewline) }
+        set { defaults.set(newValue, forKey: Keys.stripTrailingNewline) }
     }
 }

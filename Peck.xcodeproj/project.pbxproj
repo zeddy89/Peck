@@ -27,6 +27,12 @@
 		B000000000000000000000E2 /* TextProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000C /* TextProcessing.swift */; };
 		B000000000000000000000E3 /* KeyMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000006 /* KeyMapper.swift */; };
 		B000000000000000000000E4 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000008 /* Preferences.swift */; };
+		B0000000000000000000000D /* HotkeyFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000D /* HotkeyFormatter.swift */; };
+		B0000000000000000000000E /* KeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000E /* KeyMonitor.swift */; };
+		B0000000000000000000000F /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000F /* LoginItem.swift */; };
+		B00000000000000000000011 /* HotkeyRecorderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000011 /* HotkeyRecorderView.swift */; };
+		B000000000000000000000D4 /* HotkeyFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000000D4 /* HotkeyFormatterTests.swift */; };
+		B000000000000000000000E5 /* HotkeyFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000D /* HotkeyFormatter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,6 +48,11 @@
 		F0000000000000000000000A /* AccessibilityGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityGate.swift; sourceTree = "<group>"; };
 		F0000000000000000000000B /* CoordinateMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateMath.swift; sourceTree = "<group>"; };
 		F0000000000000000000000C /* TextProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextProcessing.swift; sourceTree = "<group>"; };
+		F0000000000000000000000D /* HotkeyFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyFormatter.swift; sourceTree = "<group>"; };
+		F0000000000000000000000E /* KeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyMonitor.swift; sourceTree = "<group>"; };
+		F0000000000000000000000F /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
+		F00000000000000000000011 /* HotkeyRecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyRecorderView.swift; sourceTree = "<group>"; };
+		F000000000000000000000D4 /* HotkeyFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyFormatterTests.swift; sourceTree = "<group>"; };
 		F000000000000000000000D0 /* CoordinateMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateMathTests.swift; sourceTree = "<group>"; };
 		F000000000000000000000D1 /* TextProcessingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextProcessingTests.swift; sourceTree = "<group>"; };
 		F000000000000000000000D2 /* PreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesTests.swift; sourceTree = "<group>"; };
@@ -94,6 +105,10 @@
 				F0000000000000000000000A /* AccessibilityGate.swift */,
 				F0000000000000000000000B /* CoordinateMath.swift */,
 				F0000000000000000000000C /* TextProcessing.swift */,
+				F0000000000000000000000D /* HotkeyFormatter.swift */,
+				F0000000000000000000000E /* KeyMonitor.swift */,
+				F0000000000000000000000F /* LoginItem.swift */,
+				F00000000000000000000011 /* HotkeyRecorderView.swift */,
 			);
 			path = Peck;
 			sourceTree = "<group>";
@@ -105,6 +120,7 @@
 				F000000000000000000000D1 /* TextProcessingTests.swift */,
 				F000000000000000000000D2 /* PreferencesTests.swift */,
 				F000000000000000000000D3 /* KeyMapperTests.swift */,
+				F000000000000000000000D4 /* HotkeyFormatterTests.swift */,
 			);
 			path = PeckTests;
 			sourceTree = "<group>";
@@ -207,6 +223,10 @@
 				B0000000000000000000000A /* AccessibilityGate.swift in Sources */,
 				B0000000000000000000000B /* CoordinateMath.swift in Sources */,
 				B0000000000000000000000C /* TextProcessing.swift in Sources */,
+				B0000000000000000000000D /* HotkeyFormatter.swift in Sources */,
+				B0000000000000000000000E /* KeyMonitor.swift in Sources */,
+				B0000000000000000000000F /* LoginItem.swift in Sources */,
+				B00000000000000000000011 /* HotkeyRecorderView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -218,10 +238,12 @@
 				B000000000000000000000D1 /* TextProcessingTests.swift in Sources */,
 				B000000000000000000000D2 /* PreferencesTests.swift in Sources */,
 				B000000000000000000000D3 /* KeyMapperTests.swift in Sources */,
+				B000000000000000000000D4 /* HotkeyFormatterTests.swift in Sources */,
 				B000000000000000000000E1 /* CoordinateMath.swift in Sources */,
 				B000000000000000000000E2 /* TextProcessing.swift in Sources */,
 				B000000000000000000000E3 /* KeyMapper.swift in Sources */,
 				B000000000000000000000E4 /* Preferences.swift in Sources */,
+				B000000000000000000000E5 /* HotkeyFormatter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

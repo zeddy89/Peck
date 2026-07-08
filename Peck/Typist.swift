@@ -20,19 +20,76 @@ final class Typist {
     static let shared = Typist()
     private init() {}
 
+    /// Fired on the main thread when typing starts (`true`) and when it ends
+    /// (`false`) — whether it finished or was aborted. Drives the menu-bar
+    /// "typing" icon and the Esc/hotkey abort monitor.
+    var onTypingStateChange: ((Bool) -> Void)?
+
+    /// Typing runs on its own serial queue so it never blocks the main thread and
+    /// so a single in-flight job can be cancelled cleanly.
+    private let queue = DispatchQueue(label: "dev.homelab.peck.typist", qos: .userInitiated)
+    private let lock = NSLock()
+    private var _cancelled = false
+    private var _isTyping = false
+
+    /// Whether a typing job is currently running. Used to route the global hotkey
+    /// to "abort" instead of "arm" while typing.
+    var isTyping: Bool { lock.withLock { _isTyping } }
+
+    /// Enqueue clipboard text to be typed. Returns immediately; typing proceeds on
+    /// the dedicated queue and can be stopped with `cancel()`.
     func type(_ rawText: String) {
-        let text = TextNormalizer.normalizedLineBreaks(rawText)
+        lock.withLock { _cancelled = false }
+        queue.async { [weak self] in
+            self?.run(rawText)
+        }
+    }
+
+    /// Request that in-progress typing stop as soon as possible. Thread-safe.
+    func cancel() {
+        lock.withLock { _cancelled = true }
+    }
+
+    private var isCancelled: Bool { lock.withLock { _cancelled } }
+
+    private func run(_ rawText: String) {
+        let prefs = Preferences.shared
+        let keys = TextProcessing.keySequence(
+            for: rawText,
+            stripTrailingNewline: prefs.stripTrailingNewline,
+            appendReturn: prefs.pressReturnAfterTyping)
+
+        guard !keys.isEmpty else { return }
+
         let source = CGEventSource(stateID: .combinedSessionState)
-        let delayMicroseconds = UInt32(max(0, Preferences.shared.keystrokeDelayMs)) * 1_000
+        let delayMicroseconds = UInt32(max(0, prefs.keystrokeDelayMs)) * 1_000
         let mapper = makeMapperIfNeeded()
 
-        for character in text {
+        setTyping(true)
+        defer { setTyping(false) }
+
+        for key in keys {
+            if isCancelled {
+                // A character was typed atomically (press() balances its own
+                // modifiers), so nothing should be held — but release defensively
+                // so an aborted shifted/optioned keystroke can never strand a
+                // modifier physically down.
+                releaseModifiers(source: source)
+                break
+            }
             autoreleasepool {
-                typeCharacter(character, source: source, mapper: mapper)
+                emit(key, source: source, mapper: mapper)
             }
             if delayMicroseconds > 0 {
                 usleep(delayMicroseconds)
             }
+        }
+    }
+
+    private func setTyping(_ typing: Bool) {
+        lock.withLock { _isTyping = typing }
+        DispatchQueue.main.async { [weak self] in
+            self?.onTypingStateChange?(typing)
         }
     }
 
@@ -48,10 +105,10 @@ final class Typist {
         }
     }
 
-    // MARK: - Per-character dispatch
+    // MARK: - Per-key dispatch
 
-    private func typeCharacter(_ character: Character, source: CGEventSource?, mapper: KeyMapper?) {
-        switch TextProcessing.classify(character) {
+    private func emit(_ key: TypedKey, source: CGEventSource?, mapper: KeyMapper?) {
+        switch key {
         case .returnKey:
             press(keyCode: CGKeyCode(kVK_Return), flags: [], source: source)
         case .tab:
@@ -108,5 +165,22 @@ final class Typist {
 
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
+    }
+
+    // MARK: - Abort safety
+
+    /// Post key-up for every modifier we might synthesize, so aborting mid-stroke
+    /// can never leave Shift/Option/Command/Control stuck down. A key-up for a key
+    /// that isn't down is a harmless no-op.
+    private func releaseModifiers(source: CGEventSource?) {
+        let modifiers = [
+            kVK_Shift, kVK_RightShift,
+            kVK_Option, kVK_RightOption,
+            kVK_Command, kVK_RightCommand,
+            kVK_Control, kVK_RightControl,
+        ]
+        for modifier in modifiers {
+            postKey(CGKeyCode(modifier), down: false, flags: [], source: source)
+        }
     }
 }

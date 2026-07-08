@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let targeting = TargetingController()
     private let hotkey = HotkeyManager()
+    private let abortMonitor = KeyMonitor()
     private lazy var settings = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -19,18 +20,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         targeting.onStateChange = { [weak self] armed in
-            self?.statusItem.button?.image = Self.icon(armed: armed)
+            self?.refreshIcon(armed: armed)
         }
 
+        // While typing, the hotkey aborts instead of arming; otherwise it toggles
+        // targeting. Esc (via the abort monitor) also cancels an in-progress paste.
         hotkey.onActivate = { [weak self] in
-            self?.targeting.toggle()
+            guard let self else { return }
+            if Typist.shared.isTyping {
+                Typist.shared.cancel()
+            } else {
+                self.targeting.toggle()
+            }
         }
         if Preferences.shared.hotkeyEnabled {
             hotkey.register()
         }
 
+        // Drive the abort monitor and the "typing" icon from typing state (fired on
+        // the main thread by Typist).
+        Typist.shared.onTypingStateChange = { [weak self] typing in
+            guard let self else { return }
+            typing ? self.abortMonitor.start() : self.abortMonitor.stop()
+            self.isTyping = typing
+            self.refreshIcon(armed: self.targeting.isArmed)
+        }
+        abortMonitor.onEscape = {
+            Typist.shared.cancel()
+        }
+
         settings.onHotkeyToggle = { [weak self] enabled in
             enabled ? self?.hotkey.register() : self?.hotkey.unregister()
+        }
+        settings.onHotkeyChanged = { [weak self] in
+            if Preferences.shared.hotkeyEnabled {
+                self?.hotkey.reregister()
+            }
         }
 
         // Nudge the Accessibility prompt at first launch so the user
@@ -38,10 +63,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = AccessibilityGate.check(prompt: true)
     }
 
+    private var isTyping = false
+
+    private func refreshIcon(armed: Bool) {
+        statusItem.button?.image = Self.icon(armed: armed, typing: isTyping)
+    }
+
     // MARK: - Status item
 
-    private static func icon(armed: Bool) -> NSImage? {
-        let name = armed ? "dot.scope" : "scope"
+    private static func icon(armed: Bool, typing: Bool = false) -> NSImage? {
+        let name: String
+        if typing {
+            name = "keyboard.fill" // distinct glyph while a paste is being typed
+        } else if armed {
+            name = "dot.scope"
+        } else {
+            name = "scope"
+        }
         let image = NSImage(systemSymbolName: name, accessibilityDescription: "Peck")
             ?? NSImage(systemSymbolName: "scope", accessibilityDescription: "Peck")
         image?.isTemplate = true
@@ -55,6 +93,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if isRightClick {
             showMenu()
+        } else if Typist.shared.isTyping {
+            // A left-click while typing aborts, matching the hotkey's behavior.
+            Typist.shared.cancel()
         } else {
             targeting.toggle()
         }
