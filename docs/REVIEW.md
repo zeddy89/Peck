@@ -150,3 +150,25 @@ shipped.
 
 Deferred: P2-3 (keypad labels), P2-4 (license — owner decision), P2-5
 (pasteboard tests need a pasteboard server), P2-6 (documented only).
+
+## Phase 2 status
+
+All six checklist items were implemented (commits `21b09ed`, `7c4deef`,
+`8c72de4` and the review-fix commit following them). Both a code-review and an
+adversarial security-review pass ran over the diff; both returned PASS. Their
+actionable findings were applied: a stronger regression assertion for the
+bracketed-paste breakout test, an overwrite-indent sanitization test, an NSLog
+when `CGEventSource` creation fails (untagged events would resurrect P0-1),
+CI `push` restricted to `main` with `permissions: contents: read` and pinned
+`-destination 'platform=macOS'`, and a comment stating the synthetic-event tag
+is not a trust boundary.
+
+**Missing infrastructure:** this change was authored on a Linux host with no
+Swift toolchain, Xcode, or macOS SDK, so `xcodebuild … test` (the project's
+real verify path) could not be executed here. The 48 logic tests (41 existing
++ 7 new test methods) must be run via `xcodebuild -project Peck.xcodeproj
+-scheme Peck test` on a Mac — or by the CI workflow added in this change on
+first push. The
+KeyMonitor/SyntheticEventTag behavior is additionally TCC-gated (needs the
+Accessibility grant) and needs the manual bracketed-paste check listed in
+VERIFICATION.md §7a.

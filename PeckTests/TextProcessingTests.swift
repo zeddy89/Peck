@@ -111,10 +111,24 @@ final class TextProcessingTests: XCTestCase {
 
     func testBracketedPasteContentCannotContainEscape() {
         // An ESC[201~ embedded in the clipboard must not close the wrapper early:
-        // the only Escapes in the plan are Peck's own two markers.
+        // the ESC literal is dropped, so only Peck's own two markers remain and
+        // the rest of the payload is typed as inert text.
         let plan = TextProcessing.typingPlan(for: "x\u{1B}[201~y", workaround: .bracketedPaste,
                                              stripTrailingNewline: false, appendReturn: false)
         XCTAssertEqual(plan.filter { $0 == .escape }.count, 2)
+        XCTAssertFalse(plan.contains(.key(.literal("\u{1B}"))))
+        XCTAssertFalse(plan.contains(.key(.literal("\u{9B}"))))
+    }
+
+    func testOverwriteIndentPlanIsSanitizedToo() {
+        // The filter feeds every workaround branch, not just bracketed paste.
+        let plan = TextProcessing.typingPlan(for: "a\u{1B}\nb", workaround: .overwriteIndent,
+                                             stripTrailingNewline: false, appendReturn: false)
+        XCTAssertEqual(plan, [
+            .key(.literal("a")),
+            .key(.returnKey), .selectLineStart,
+            .key(.literal("b")),
+        ])
     }
 
     func testAllControlClipboardYieldsEmptyPlan() {

@@ -6,13 +6,25 @@ import Carbon.HIToolbox
 /// come back around through the window server. `KeyMonitor` relies on this: the
 /// bracketed-paste markers contain a synthetic Escape (keycode 53), and without
 /// the tag the Esc-to-abort monitor would cancel the very paste that posted it.
+///
+/// The tag is a self-identification mechanism, not a trust boundary: the value
+/// is public and any process that can post events could forge it. Never use
+/// `isSynthetic` as a security signal — here a forged tag can only make Peck
+/// ignore an Esc it would otherwise ignore anyway, and an untagged forged Esc
+/// merely aborts typing, which is the fail-safe direction.
 enum SyntheticEventTag {
     /// 'PECK' — copied from the source into every event it creates.
     static let magic: Int64 = 0x5045_434B
 
     static func makeSource() -> CGEventSource? {
-        let source = CGEventSource(stateID: .combinedSessionState)
-        source?.userData = magic
+        guard let source = CGEventSource(stateID: .combinedSessionState) else {
+            // Events created against a nil source fall back to an untagged
+            // default source, which would resurrect the self-abort bug — make
+            // the (unlikely) failure visible instead of silent.
+            NSLog("Peck: CGEventSource creation failed; synthetic events will be untagged")
+            return nil
+        }
+        source.userData = magic
         return source
     }
 
