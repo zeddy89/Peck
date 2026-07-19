@@ -92,6 +92,37 @@ final class TextProcessingTests: XCTestCase {
         XCTAssertEqual(keys, [.literal("r"), .literal("u"), .literal("n"), .returnKey])
     }
 
+    // MARK: - Control-character sanitization
+
+    func testEscapeIsDropped() {
+        XCTAssertEqual(TextProcessing.keySequence(for: "a\u{1B}b"), [.literal("a"), .literal("b")])
+    }
+
+    func testC0DELAndC1ControlsAreDropped() {
+        // C0 (SOH), DEL, and the one-byte CSI (C1) all vanish; é survives.
+        let keys = TextProcessing.keySequence(for: "\u{01}x\u{7F}\u{9B}é")
+        XCTAssertEqual(keys, [.literal("x"), .literal("é")])
+    }
+
+    func testTabAndNewlinesSurviveSanitization() {
+        XCTAssertEqual(TextProcessing.keySequence(for: "a\t\nb"),
+                       [.literal("a"), .tab, .returnKey, .literal("b")])
+    }
+
+    func testBracketedPasteContentCannotContainEscape() {
+        // An ESC[201~ embedded in the clipboard must not close the wrapper early:
+        // the only Escapes in the plan are Peck's own two markers.
+        let plan = TextProcessing.typingPlan(for: "x\u{1B}[201~y", workaround: .bracketedPaste,
+                                             stripTrailingNewline: false, appendReturn: false)
+        XCTAssertEqual(plan.filter { $0 == .escape }.count, 2)
+    }
+
+    func testAllControlClipboardYieldsEmptyPlan() {
+        let plan = TextProcessing.typingPlan(for: "\u{1B}\u{07}", workaround: .bracketedPaste,
+                                             stripTrailingNewline: false, appendReturn: false)
+        XCTAssertTrue(plan.isEmpty)
+    }
+
     // MARK: - TextNormalizer
 
     func testNormalizedLineBreaks() {
@@ -147,6 +178,14 @@ final class TextProcessingTests: XCTestCase {
             .key(.returnKey), .selectLineStart,
             .key(.literal(" ")), .key(.literal(" ")), .key(.literal("b")),
         ])
+    }
+
+    func testPlanOverwriteIndentAppendedReturnHasNoSelectLineStart() {
+        // The deliberately appended Return finalizes the paste; selecting back to
+        // line start after it would grab text that isn't Peck's to overwrite.
+        let plan = TextProcessing.typingPlan(for: "a", workaround: .overwriteIndent,
+                                             stripTrailingNewline: false, appendReturn: true)
+        XCTAssertEqual(plan, [.key(.literal("a")), .key(.returnKey)])
     }
 
     func testPlanEmptyContentIsEmpty() {

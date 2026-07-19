@@ -59,11 +59,34 @@ enum TextProcessing {
                             stripTrailingNewline: Bool = false,
                             appendReturn: Bool = false) -> [TypedKey] {
         let text = preparedText(for: rawText, stripTrailingNewline: stripTrailingNewline)
-        var keys = text.map(classify)
+        var keys = contentKeys(for: text)
         if appendReturn {
             keys.append(.returnKey)
         }
         return keys
+    }
+
+    /// Classify each character, dropping control characters that must never be
+    /// typed. C0 controls (tab and the newline set are classified first, so they
+    /// never reach the filter), DEL, and C1 controls have no keycode mapping and
+    /// would be unicode-injected verbatim — and a raw ESC or one-byte CSI
+    /// (U+009B) hidden in copied text could close the bracketed-paste wrapper
+    /// early, smuggling keystrokes past the very guard it provides (the
+    /// paste-injection attack terminals sanitize against).
+    private static func contentKeys(for text: String) -> [TypedKey] {
+        text.compactMap { character in
+            let key = classify(character)
+            if case .literal = key, isDisallowedControl(character) {
+                return nil
+            }
+            return key
+        }
+    }
+
+    private static func isDisallowedControl(_ character: Character) -> Bool {
+        guard character.unicodeScalars.count == 1,
+              let scalar = character.unicodeScalars.first else { return false }
+        return scalar.value < 0x20 || (0x7F...0x9F).contains(scalar.value)
     }
 
     /// The full ordered plan `Typist` executes, incorporating the auto-indent
@@ -73,7 +96,7 @@ enum TextProcessing {
                            stripTrailingNewline: Bool,
                            appendReturn: Bool) -> [TypingInstruction] {
         let text = preparedText(for: rawText, stripTrailingNewline: stripTrailingNewline)
-        let content = text.map(classify)
+        let content = contentKeys(for: text)
 
         // Nothing to type (and no Return to append) → empty plan, so bracketed-paste
         // markers aren't emitted around empty content.

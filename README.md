@@ -83,6 +83,7 @@ If a multi-line paste comes out as a staircase, pick the mode matching your targ
 - **RDP (Windows App / Microsoft Remote Desktop):** either mode usually works; keycodes is safer for login screens.
 - **Password fields that block paste:** they can't block keystrokes. Keycode mode looks exactly like typing because it is.
 - **Multi-line pastes:** newlines are sent as Return, tabs as Tab, and CRLF collapses to a single Return. Be careful pasting multi-line text into a shell; each newline executes. Keep "Strip trailing newline" on so the *last* line doesn't auto-run, and leave "Press Return after typing" off unless you want it to.
+- **Control characters** other than tabs and newlines (raw ESC, other C0 bytes, DEL, C1 controls) are dropped rather than typed. Escape sequences hidden in copied text can't reach the target — and can't break out of the bracketed-paste wrapper from the inside.
 
 ## Layout
 
