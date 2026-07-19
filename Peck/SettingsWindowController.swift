@@ -218,9 +218,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         // Hotkey enable and shortcut are applied immediately via their own actions.
     }
 
-    func windowWillClose(_ notification: Notification) {
-        // Commit any in-progress text field edits, then persist.
+    /// Commit any in-progress text-field edit, then persist. Called on window
+    /// close and at app termination — quitting with the window open never fires
+    /// `windowWillClose`, which would silently drop edited delay/threshold values.
+    func commitPendingEdits() {
         window?.makeFirstResponder(nil)
         saveValues()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        commitPendingEdits()
     }
 }

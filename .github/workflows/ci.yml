@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Build & test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Debug)
+        run: xcodebuild -project Peck.xcodeproj -scheme Peck -configuration Debug build
+
+      # PeckTests is a host-less logic bundle: no app launch, no TCC prompts,
+      # and the KeyMapper tests skip if the runner has no resolvable layout.
+      - name: Test
+        run: xcodebuild -project Peck.xcodeproj -scheme Peck test
+
+      - name: Fallback swiftc build
+        run: ./Scripts/build-no-xcode.sh

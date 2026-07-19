@@ -65,6 +65,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = AccessibilityGate.check(prompt: true)
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // windowWillClose doesn't fire during termination, so quitting with the
+        // Settings window open would drop in-progress text-field edits.
+        if settings.window?.isVisible == true {
+            settings.commitPendingEdits()
+        }
+    }
+
     private var isTyping = false
 
     private func refreshIcon(armed: Bool) {
