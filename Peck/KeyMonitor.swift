@@ -5,8 +5,9 @@ import AppKit
 /// (Esc destined for the target app — this needs Accessibility, which Peck already
 /// requires to type) plus a local monitor (when Peck itself is frontmost).
 ///
-/// Peck never synthesizes keycode 53, so its own injected keystrokes cannot trip
-/// this monitor.
+/// Peck *does* synthesize keycode 53 (the bracketed-paste markers open with a
+/// real Escape press), so both monitors ignore events carrying Peck's own
+/// `SyntheticEventTag` — only a human's Esc aborts.
 final class KeyMonitor {
 
     var onEscape: (() -> Void)?
@@ -19,12 +20,14 @@ final class KeyMonitor {
         guard globalMonitor == nil, localMonitor == nil else { return }
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, event.keyCode == self.escapeKeyCode else { return }
+            guard let self, event.keyCode == self.escapeKeyCode,
+                  !SyntheticEventTag.isSynthetic(event) else { return }
             self.onEscape?()
         }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, event.keyCode == self.escapeKeyCode else { return event }
+            guard let self, event.keyCode == self.escapeKeyCode,
+                  !SyntheticEventTag.isSynthetic(event) else { return event }
             self.onEscape?()
             return nil // swallow so Esc doesn't beep in Peck's own UI
         }

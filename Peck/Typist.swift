@@ -1,6 +1,27 @@
 import AppKit
 import Carbon.HIToolbox
 
+/// Every synthetic event Peck posts is stamped with a magic
+/// `kCGEventSourceUserData` value so Peck can recognize its own events when they
+/// come back around through the window server. `KeyMonitor` relies on this: the
+/// bracketed-paste markers contain a synthetic Escape (keycode 53), and without
+/// the tag the Esc-to-abort monitor would cancel the very paste that posted it.
+enum SyntheticEventTag {
+    /// 'PECK' — copied from the source into every event it creates.
+    static let magic: Int64 = 0x5045_434B
+
+    static func makeSource() -> CGEventSource? {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        source?.userData = magic
+        return source
+    }
+
+    static func isSynthetic(_ event: NSEvent) -> Bool {
+        guard let cgEvent = event.cgEvent else { return false }
+        return cgEvent.getIntegerValueField(.eventSourceUserData) == magic
+    }
+}
+
 /// Turns clipboard text into synthetic keystrokes.
 ///
 /// Two engines:
@@ -73,7 +94,7 @@ final class Typist {
 
         guard !plan.isEmpty else { return }
 
-        let source = CGEventSource(stateID: .combinedSessionState)
+        let source = SyntheticEventTag.makeSource()
         let delayMicroseconds = UInt32(max(0, prefs.keystrokeDelayMs)) * 1_000
         let mapper = makeMapperIfNeeded()
 

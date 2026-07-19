@@ -167,7 +167,7 @@ enum CoordinateConverter {
 
 enum MouseClicker {
     static func click(at point: CGPoint) {
-        let source = CGEventSource(stateID: .combinedSessionState)
+        let source = SyntheticEventTag.makeSource()
 
         let move = CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
                            mouseCursorPosition: point, mouseButton: .left)
@@ -175,6 +175,11 @@ enum MouseClicker {
                            mouseCursorPosition: point, mouseButton: .left)
         let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
                          mouseCursorPosition: point, mouseButton: .left)
+
+        // A real single click carries click-state 1; CGEvent defaults to 0, and
+        // some targets consult the count when routing focus.
+        down?.setIntegerValueField(.mouseEventClickState, value: 1)
+        up?.setIntegerValueField(.mouseEventClickState, value: 1)
 
         move?.post(tap: .cghidEventTap)
         usleep(20_000)
