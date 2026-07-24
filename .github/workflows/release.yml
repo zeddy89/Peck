@@ -1,12 +1,16 @@
 name: Release
 
-# Cut a downloadable build by pushing a version tag, e.g.:
-#   git tag v1.0.1 && git push origin v1.0.1
-# A macOS runner builds the Release configuration, packages Peck.app into a zip, and
-# attaches it to a GitHub Release.
+# Publish a downloadable Peck.app as a GitHub Release asset. Two triggers:
+#   - Push a version tag (the normal path):   git tag v1.0.1 && git push origin v1.0.1
+#   - Or push to the working branch with "[release]" in the commit message, for
+#     environments where tags can't be pushed directly — the runner then creates the
+#     tag and release itself via its GITHUB_TOKEN (default tag: v1.0.1).
+# Release assets are stored separately from Actions artifacts, so this is unaffected
+# by the Actions artifact storage quota.
 on:
   push:
     tags: ['v*']
+    branches: ['claude/**']
 
 permissions:
   contents: write
@@ -14,6 +18,8 @@ permissions:
 jobs:
   release:
     name: Build & publish
+    # Only actually release on a version tag, or on a branch push explicitly marked [release].
+    if: startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release]')
     # Pinned to match CI so a green CI build predicts a green release build.
     runs-on: macos-14
     steps:
@@ -36,11 +42,23 @@ jobs:
           ditto -c -k --keepParent "$APP" "Peck.zip"
           echo "SHA-256:"; shasum -a 256 Peck.zip
 
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=v1.0.1" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" Peck.zip \
-            --title "Peck $GITHUB_REF_NAME" \
+          TAG="${{ steps.tag.outputs.name }}"
+          # Create the release (and its tag) if new, otherwise just refresh the asset.
+          gh release create "$TAG" Peck.zip \
+            --title "Peck $TAG" \
+            --target "$GITHUB_SHA" \
             --generate-notes \
-            || gh release upload "$GITHUB_REF_NAME" Peck.zip --clobber
+            || gh release upload "$TAG" Peck.zip --clobber

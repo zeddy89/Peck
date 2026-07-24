@@ -21,12 +21,10 @@ jobs:
       - name: Build (Debug)
         run: xcodebuild -project Peck.xcodeproj -scheme Peck -configuration Debug -destination 'platform=macOS' build
 
-      # Build the Release configuration the shipped app uses (whole-module optimization,
-      # assertions off) into a known location so it can be packaged below.
+      # Also compile the Release configuration the shipped app uses (whole-module
+      # optimization, assertions off), so Release-only breakage is caught before a release.
       - name: Build (Release)
-        run: >
-          xcodebuild -project Peck.xcodeproj -scheme Peck -configuration Release
-          -derivedDataPath build -destination 'platform=macOS' build
+        run: xcodebuild -project Peck.xcodeproj -scheme Peck -configuration Release -destination 'platform=macOS' build
 
       # PeckTests is a host-less logic bundle: no app launch, no TCC prompts,
       # and the KeyMapper tests skip if the runner has no resolvable layout.
@@ -35,20 +33,3 @@ jobs:
 
       - name: Fallback swiftc build
         run: ./Scripts/build-no-xcode.sh
-
-      # Package the Release .app so it can be downloaded straight from this run's
-      # Artifacts, without needing a tag/Release. ditto (not `zip`) preserves the
-      # code signature and the bundle's internal symlinks.
-      - name: Package Peck.app
-        run: |
-          APP="build/Build/Products/Release/Peck.app"
-          test -d "$APP" || { echo "App not found at $APP" >&2; exit 1; }
-          ditto -c -k --keepParent "$APP" "Peck.zip"
-          echo "SHA-256:"; shasum -a 256 Peck.zip
-
-      - name: Upload Peck.app artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Peck-app-zip
-          path: Peck.zip
-          if-no-files-found: error
