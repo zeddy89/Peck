@@ -146,13 +146,23 @@ final class Typist {
 
         // In bracketed-paste mode, once the opening ESC[200~ has been posted the target
         // is in paste-receiving mode; if we abort we must still send the closing ESC[201~
-        // or it stays stuck buffering everything the user types next.
+        // or it stays stuck buffering everything the user types next. But only until the
+        // plan's *own* closing marker has been posted — after that the target is already
+        // out of paste mode, so an abort in the trailing-Return window (with "press Return
+        // after typing" on) must not emit a second, stray ESC[201~.
         let bracketed = workaround == .bracketedPaste
-        var openMarkerPosted = false
+        let openMarkerEnd = TextProcessing.bracketedPasteMarkerLength - 1
+        // The close marker ends at the last instruction, unless an appended trailing Return
+        // (the only way a bracketed plan ends in .returnKey — the marker ends in "~") sits
+        // after it.
+        var trailingReturn = false
+        if let last = plan.last, last == .key(.returnKey) { trailingReturn = true }
+        let closeMarkerEnd = bracketed ? plan.count - 1 - (trailingReturn ? 1 : 0) : -1
+        var needsCloseOnAbort = false
 
         for (index, instruction) in plan.enumerated() {
             if isCancelled(generation) {
-                if bracketed, openMarkerPosted {
+                if needsCloseOnAbort {
                     emitBracketedPasteClose(source: source, mapper: mapper)
                 }
                 // A character was typed atomically (press() balances its own
@@ -165,8 +175,9 @@ final class Typist {
             autoreleasepool {
                 execute(instruction, source: source, mapper: mapper)
             }
-            if bracketed, index == TextProcessing.bracketedPasteMarkerLength - 1 {
-                openMarkerPosted = true
+            if bracketed {
+                if index == openMarkerEnd { needsCloseOnAbort = true }
+                if index == closeMarkerEnd { needsCloseOnAbort = false }
             }
             if delayMicroseconds > 0 {
                 usleep(delayMicroseconds)

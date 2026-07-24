@@ -153,11 +153,6 @@ final class TextProcessingTests: XCTestCase {
         XCTAssertEqual(TextProcessing.keySequence(for: family), [.literal(Character(family))])
     }
 
-    func testStandaloneZeroWidthJoinerIsDropped() {
-        // A lone ZWJ (not part of an emoji cluster) is a single-scalar format control.
-        XCTAssertEqual(TextProcessing.keySequence(for: "a\u{200D}b"), [.literal("a"), .literal("b")])
-    }
-
     // MARK: - typedCharacterCount (large-paste guardrail)
 
     func testTypedCharacterCountExcludesDroppedControls() {

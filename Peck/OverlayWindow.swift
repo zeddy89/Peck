@@ -90,16 +90,18 @@ final class OverlayView: NSView {
         // and the new one (to draw them) — instead of invalidating the whole display on
         // every event. Full-screen redraws at ProMotion rates were the real cost here;
         // the static hint pill stays in the backing store between moves.
-        if let previous { setNeedsDisplay(crosshairInvalidationRect(at: previous)) }
-        setNeedsDisplay(crosshairInvalidationRect(at: newLocation))
+        if let previous { invalidateCrosshair(at: previous) }
+        invalidateCrosshair(at: newLocation)
     }
 
-    /// The vertical + horizontal 1px crosshair lines through `point`, padded a couple of
-    /// pixels so anti-aliased edges are fully cleared and redrawn.
-    private func crosshairInvalidationRect(at point: NSPoint) -> NSRect {
-        let vertical = NSRect(x: point.x - 1, y: bounds.minY, width: 3, height: bounds.height)
-        let horizontal = NSRect(x: bounds.minX, y: point.y - 1, width: bounds.width, height: 3)
-        return vertical.union(horizontal)
+    /// Invalidate the two thin strips the crosshair through `point` occupies — a full-height
+    /// vertical column and a full-width horizontal row — as **separate** rects. Unioning
+    /// them would produce the whole-view bounding box (a full-height column ∪ a full-width
+    /// row encloses everything), defeating the scoping; keeping them separate leaves the
+    /// dirty region a thin cross that draw()'s clip actually limits the compositing to.
+    private func invalidateCrosshair(at point: NSPoint) {
+        setNeedsDisplay(NSRect(x: point.x - 1, y: bounds.minY, width: 3, height: bounds.height))
+        setNeedsDisplay(NSRect(x: bounds.minX, y: point.y - 1, width: bounds.width, height: 3))
     }
 
     override func draw(_ dirtyRect: NSRect) {
