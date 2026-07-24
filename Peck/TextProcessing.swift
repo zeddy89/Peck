@@ -86,7 +86,26 @@ enum TextProcessing {
     private static func isDisallowedControl(_ character: Character) -> Bool {
         guard character.unicodeScalars.count == 1,
               let scalar = character.unicodeScalars.first else { return false }
-        return scalar.value < 0x20 || (0x7F...0x9F).contains(scalar.value)
+        // C0 controls, DEL, and C1 controls (raw ESC, the one-byte CSI, etc.).
+        if scalar.value < 0x20 || (0x7F...0x9F).contains(scalar.value) { return true }
+        // Invisible Unicode format / bidirectional controls — the "Trojan Source" class:
+        // zero-width joiners/spaces, LRM/RLM, bidi embeddings/overrides/isolates,
+        // BOM/ZWNBSP. Typed verbatim, they let a clipboard's *visible* text differ from
+        // what actually lands in the console (a what-you-see-isn't-what-you-type gap on a
+        // root-console paste tool). The guard on a single scalar means multi-scalar emoji
+        // that legitimately embed a ZWJ (e.g. 👨‍👩‍👧) are unaffected.
+        if scalar.properties.generalCategory == .format { return true }
+        return false
+    }
+
+    /// How many characters `Typist` will actually type for `rawText`: line breaks
+    /// normalized, one trailing newline optionally stripped, and control characters
+    /// that are silently dropped removed. The large-paste guardrail counts and shows
+    /// this rather than the raw grapheme count, so a clipboard padded with control
+    /// bytes can't inflate the "Type N characters?" figure past what really gets typed.
+    static func typedCharacterCount(for rawText: String, stripTrailingNewline: Bool) -> Int {
+        let text = preparedText(for: rawText, stripTrailingNewline: stripTrailingNewline)
+        return contentKeys(for: text).count
     }
 
     /// The full ordered plan `Typist` executes, incorporating the auto-indent
@@ -109,9 +128,9 @@ enum TextProcessing {
         case .none:
             plan = content.map { .key($0) }
         case .bracketedPaste:
-            plan += bracketMarker(open: true)
+            plan += bracketedPasteMarker(open: true)
             plan += content.map { .key($0) }
-            plan += bracketMarker(open: false)
+            plan += bracketedPasteMarker(open: false)
         case .overwriteIndent:
             for key in content {
                 plan.append(.key(key))
@@ -129,13 +148,20 @@ enum TextProcessing {
         return plan
     }
 
-    /// ESC [ 2 0 0 ~ (open) or ESC [ 2 0 1 ~ (close).
-    private static func bracketMarker(open: Bool) -> [TypingInstruction] {
+    /// ESC [ 2 0 0 ~ (open) or ESC [ 2 0 1 ~ (close). Exposed so `Typist` can re-emit the
+    /// closing marker when a bracketed-paste run is aborted after the opening marker —
+    /// otherwise the target terminal is left stuck in bracketed-paste-receiving mode,
+    /// silently buffering everything the user types next.
+    static func bracketedPasteMarker(open: Bool) -> [TypingInstruction] {
         let third: Character = open ? "0" : "1"
         return [.escape,
                 .key(.literal("[")), .key(.literal("2")), .key(.literal("0")),
                 .key(.literal(third)), .key(.literal("~"))]
     }
+
+    /// Number of instructions in one bracketed-paste marker (ESC [ 2 0 x ~ = 6). `Typist`
+    /// uses this to know when the opening marker has been fully posted.
+    static let bracketedPasteMarkerLength = 6
 
     /// The text `Typist` will actually iterate: normalized line breaks, with a
     /// single trailing newline optionally removed. Terminal copies almost always
@@ -151,13 +177,35 @@ enum TextProcessing {
 }
 
 enum TextNormalizer {
+    /// Collapse every line-break convention (CRLF, CR, LF, NEL, LS, PS) to a single `\n`.
+    /// One scalar pass instead of five chained `replacingOccurrences` scans — this runs
+    /// several times per paste, so the extra allocations added up. A lone CR emits one
+    /// newline and, if immediately followed by LF, that LF is swallowed so CRLF stays one.
     static func normalizedLineBreaks(_ text: String) -> String {
-        var normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
-        normalized = normalized.replacingOccurrences(of: "\r", with: "\n")
-        normalized = normalized.replacingOccurrences(of: "\u{0085}", with: "\n")
-        normalized = normalized.replacingOccurrences(of: "\u{2028}", with: "\n")
-        normalized = normalized.replacingOccurrences(of: "\u{2029}", with: "\n")
-        return normalized
+        var result = ""
+        result.reserveCapacity(text.count)
+        var lastWasCarriageReturn = false
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "\r":
+                result.append("\n")
+                lastWasCarriageReturn = true
+            case "\n":
+                // The LF half of a CRLF: the CR already emitted the newline.
+                if lastWasCarriageReturn {
+                    lastWasCarriageReturn = false
+                } else {
+                    result.append("\n")
+                }
+            case "\u{0085}", "\u{2028}", "\u{2029}":
+                result.append("\n")
+                lastWasCarriageReturn = false
+            default:
+                result.unicodeScalars.append(scalar)
+                lastWasCarriageReturn = false
+            }
+        }
+        return result
     }
 
     static func lineBreakCount(in text: String) -> Int {

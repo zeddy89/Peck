@@ -74,15 +74,43 @@ final class Typist {
     /// to "abort" instead of "arm" while typing.
     var isTyping: Bool { lock.withLock { _isTyping } }
 
-    /// Enqueue clipboard text to be typed. Returns immediately; typing proceeds on
-    /// the dedicated queue and can be stopped with `cancel()`.
-    func type(_ rawText: String) {
+    /// Enqueue clipboard text to be typed. Returns immediately; the optional focus
+    /// click, the pre-type settle, and the typing all proceed on the dedicated queue
+    /// and can be stopped with `cancel()`.
+    ///
+    /// `isTyping` is set **synchronously** here, before returning, so the entire
+    /// pre-type window (focus click + `settleDelay` + `preTypeDelay`) is covered: an
+    /// abort gesture during it routes to `cancel()` and `arm()` aborts instead of
+    /// overlapping. Previously `isTyping` only flipped once the background job reached
+    /// the typing loop, leaving a dead window where the paste was already committed but
+    /// uncancellable, and where the hotkey re-armed a fresh session (whose overlay could
+    /// then catch the pending synthetic focus click and paste a second time).
+    func type(_ rawText: String,
+              focusPoint: CGPoint? = nil,
+              settleDelay: TimeInterval = 0,
+              preTypeDelay: TimeInterval = 0) {
+        let prefs = Preferences.shared
+        let plan = TextProcessing.typingPlan(
+            for: rawText,
+            workaround: prefs.indentWorkaround,
+            stripTrailingNewline: prefs.stripTrailingNewline,
+            appendReturn: prefs.pressReturnAfterTyping)
+
+        // Nothing to type → never engage typing state or post a focus click.
+        guard !plan.isEmpty else { return }
+
         let generation = lock.withLock { () -> Int in
             _generation += 1
             return _generation
         }
+        setTyping(true)
+
+        let keystrokeDelayMs = prefs.keystrokeDelayMs
+        let workaround = prefs.indentWorkaround
         queue.async { [weak self] in
-            self?.run(rawText, generation: generation)
+            self?.run(plan: plan, generation: generation, keystrokeDelayMs: keystrokeDelayMs,
+                      workaround: workaround, focusPoint: focusPoint,
+                      settleDelay: settleDelay, preTypeDelay: preTypeDelay)
         }
     }
 
@@ -96,25 +124,37 @@ final class Typist {
         lock.withLock { _cancelledThrough >= generation }
     }
 
-    private func run(_ rawText: String, generation: Int) {
-        let prefs = Preferences.shared
-        let plan = TextProcessing.typingPlan(
-            for: rawText,
-            workaround: prefs.indentWorkaround,
-            stripTrailingNewline: prefs.stripTrailingNewline,
-            appendReturn: prefs.pressReturnAfterTyping)
-
-        guard !plan.isEmpty else { return }
-
-        let source = SyntheticEventTag.makeSource()
-        let delayMicroseconds = UInt32(max(0, prefs.keystrokeDelayMs)) * 1_000
-        let mapper = makeMapperIfNeeded()
-
-        setTyping(true)
+    private func run(plan: [TypingInstruction], generation: Int, keystrokeDelayMs: Int,
+                     workaround: IndentWorkaround, focusPoint: CGPoint?,
+                     settleDelay: TimeInterval, preTypeDelay: TimeInterval) {
+        // Balances the synchronous setTyping(true) in type(); fires whether this run
+        // finishes, is aborted, or bails during the pre-type window.
         defer { setTyping(false) }
 
-        for instruction in plan {
+        let source = SyntheticEventTag.makeSource()
+        let delayMicroseconds = UInt32(max(0, keystrokeDelayMs)) * 1_000
+        let mapper = makeMapperIfNeeded()
+
+        // Focus the target, then let it settle — inside the cancellable window, so Esc /
+        // the hotkey / the icon can still stop the paste before the first keystroke and
+        // no click is posted at all if the user aborts during the settle.
+        if let focusPoint {
+            if sleepUnlessCancelled(settleDelay, generation: generation) { return }
+            MouseClicker.click(at: focusPoint)
+            if sleepUnlessCancelled(preTypeDelay, generation: generation) { return }
+        }
+
+        // In bracketed-paste mode, once the opening ESC[200~ has been posted the target
+        // is in paste-receiving mode; if we abort we must still send the closing ESC[201~
+        // or it stays stuck buffering everything the user types next.
+        let bracketed = workaround == .bracketedPaste
+        var openMarkerPosted = false
+
+        for (index, instruction) in plan.enumerated() {
             if isCancelled(generation) {
+                if bracketed, openMarkerPosted {
+                    emitBracketedPasteClose(source: source, mapper: mapper)
+                }
                 // A character was typed atomically (press() balances its own
                 // modifiers), so nothing should be held — but release defensively
                 // so an aborted shifted/optioned keystroke can never strand a
@@ -125,9 +165,36 @@ final class Typist {
             autoreleasepool {
                 execute(instruction, source: source, mapper: mapper)
             }
+            if bracketed, index == TextProcessing.bracketedPasteMarkerLength - 1 {
+                openMarkerPosted = true
+            }
             if delayMicroseconds > 0 {
                 usleep(delayMicroseconds)
             }
+        }
+    }
+
+    /// Sleep up to `seconds`, waking early (and returning true) if the run is cancelled,
+    /// so even a long pre-type delay stays promptly abortable. Returns the cancellation
+    /// state at the end.
+    private func sleepUnlessCancelled(_ seconds: TimeInterval, generation: Int) -> Bool {
+        guard seconds > 0 else { return isCancelled(generation) }
+        let step: TimeInterval = 0.02
+        var remaining = seconds
+        while remaining > 0 {
+            if isCancelled(generation) { return true }
+            let chunk = min(step, remaining)
+            Thread.sleep(forTimeInterval: chunk)
+            remaining -= chunk
+        }
+        return isCancelled(generation)
+    }
+
+    /// Post the closing bracketed-paste marker (ESC[201~) to release a target left in
+    /// paste-receiving mode by an aborted bracketed run.
+    private func emitBracketedPasteClose(source: CGEventSource?, mapper: KeyMapper?) {
+        for instruction in TextProcessing.bracketedPasteMarker(open: false) {
+            execute(instruction, source: source, mapper: mapper)
         }
     }
 

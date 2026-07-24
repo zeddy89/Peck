@@ -84,29 +84,29 @@ final class TargetingController {
         let cgPoint = CoordinateConverter.toCG(screenPoint)
         let rawText = ClipboardTextReader.read() ?? ""
 
-        // The guardrail against pecking a huge file into a root shell. Count what
-        // will actually be typed (after the trailing-newline strip).
-        let prepared = TextProcessing.preparedText(
-            for: rawText, stripTrailingNewline: Preferences.shared.stripTrailingNewline)
-        let threshold = Preferences.shared.largePasteThreshold
-        if threshold > 0, prepared.count > threshold, !confirmLargePaste(prepared) {
-            return
+        // The guardrail against pecking a huge file into a root shell. Count what will
+        // actually be typed — control characters that are silently dropped, and one
+        // stripped trailing newline, don't count — so the figure can't be inflated (or
+        // deflated) relative to the real payload.
+        let prefs = Preferences.shared
+        let typedCount = TextProcessing.typedCharacterCount(
+            for: rawText, stripTrailingNewline: prefs.stripTrailingNewline)
+        let threshold = prefs.largePasteThreshold
+        if threshold > 0, typedCount > threshold {
+            let prepared = TextProcessing.preparedText(
+                for: rawText, stripTrailingNewline: prefs.stripTrailingNewline)
+            if !confirmLargePaste(prepared, typedCount: typedCount) { return }
         }
 
-        let preTypeDelay = Double(max(0, Preferences.shared.preTypeDelayMs)) / 1000.0
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            // The overlays are already closed and set to ignore mouse events, so
-            // correctness no longer hinges on this settle — it just gives the
-            // window server a beat to route focus to the real target underneath.
-            Thread.sleep(forTimeInterval: 0.15)
-
-            MouseClicker.click(at: cgPoint)
-
-            guard !rawText.isEmpty else { return }
-            Thread.sleep(forTimeInterval: preTypeDelay)
-            Typist.shared.type(rawText)
-        }
+        // The focus click and the pre-type settle now run inside Typist, on its serial
+        // queue and under the cancellation generation, so `isTyping` is true (and Esc /
+        // the hotkey / the icon abort the paste) for the entire pre-type window instead
+        // of only once typing begins. Handing the point to Typist also means no second
+        // synthetic click is posted from here that a re-armed overlay could catch.
+        let settleDelay: TimeInterval = 0.15
+        let preTypeDelay = TimeInterval(max(0, prefs.preTypeDelayMs)) / 1000.0
+        Typist.shared.type(rawText, focusPoint: cgPoint,
+                           settleDelay: settleDelay, preTypeDelay: preTypeDelay)
     }
 
     // MARK: - Confirmation alerts
@@ -133,12 +133,12 @@ final class TargetingController {
         alert.buttons.dropFirst().first?.keyEquivalent = "\r"
     }
 
-    private func confirmLargePaste(_ text: String) -> Bool {
+    private func confirmLargePaste(_ text: String, typedCount: Int) -> Bool {
         let lineCount = text.isEmpty ? 0 : TextNormalizer.lineBreakCount(in: text) + 1
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Type \(text.count) characters?"
-        alert.informativeText = "The clipboard is \(text.count) characters across "
+        alert.messageText = "Type \(typedCount) characters?"
+        alert.informativeText = "The clipboard is \(typedCount) characters across "
             + "\(lineCount) line\(lineCount == 1 ? "" : "s"). Peck will type all of it "
             + "into wherever you clicked — each newline runs as Return in a console."
         alert.addButton(withTitle: "Type It")
@@ -190,65 +190,34 @@ enum MouseClicker {
 }
 
 enum ClipboardTextReader {
-    private struct Candidate {
-        let text: String
-        let priority: Int
-
-        var lineBreakCount: Int {
-            TextNormalizer.lineBreakCount(in: text)
-        }
-    }
-
+    /// Read the clipboard as the text Peck will type.
+    ///
+    /// The plain-text flavor is **always** preferred when it exists. That keeps what
+    /// gets typed identical to what the user sees — no rich-vs-plain substitution that
+    /// could quietly move where a console's Return-executed line breaks fall — and,
+    /// crucially, it means the WebKit-backed `NSAttributedString` HTML importer is never
+    /// run on untrusted clipboard data. That importer resolves external references
+    /// (remote images/CSS) while parsing, so it can make Peck — an app whose whole
+    /// posture is "no network" — silently beacon out to an attacker-controlled host from
+    /// a single line copied off a web page, and it is a large untrusted-input parser
+    /// surface with a CVE history.
+    ///
+    /// Only when there is no usable plain flavor at all does Peck fall back to RTF, whose
+    /// `NSAttributedString` import is an offline parser (images are embedded, not
+    /// fetched). HTML is deliberately not parsed here, so clipboard reading stays
+    /// network-incapable by construction.
     static func read(from pasteboard: NSPasteboard = .general) -> String? {
-        let plainText = pasteboard.string(forType: .string)
-            .map(TextNormalizer.normalizedLineBreaks)
-            .flatMap { $0.isEmpty ? nil : $0 }
-
-        if let plainText, TextNormalizer.lineBreakCount(in: plainText) > 0 {
-            return plainText
+        if let plain = pasteboard.string(forType: .string)
+            .map(TextNormalizer.normalizedLineBreaks), !plain.isEmpty {
+            return plain
         }
 
-        var richCandidates: [Candidate] = []
-
-        if let html = attributedString(from: pasteboard, type: .html, documentType: .html) {
-            richCandidates.append(Candidate(text: html, priority: 20))
+        if let rtf = attributedString(from: pasteboard, type: .rtf, documentType: .rtf)
+            .map(TextNormalizer.normalizedLineBreaks), !rtf.isEmpty {
+            return rtf
         }
 
-        if let rtf = attributedString(from: pasteboard, type: .rtf, documentType: .rtf) {
-            richCandidates.append(Candidate(text: rtf, priority: 10))
-        }
-
-        let normalizedRich = richCandidates
-            .map { Candidate(text: TextNormalizer.normalizedLineBreaks($0.text), priority: $0.priority) }
-            .filter { !$0.text.isEmpty }
-
-        // When plain text exists but is single-line, only prefer a rich flavor that
-        // actually recovers line structure the plain flavor lost.
-        let multiLineRich = normalizedRich
-            .filter { $0.lineBreakCount > 0 }
-            .max(by: Self.ranks)?
-            .text
-
-        if let plainText, let multiLineRich {
-            return TextNormalizer.sameWords(plainText, multiLineRich) ? multiLineRich : plainText
-        }
-
-        if let plainText {
-            return plainText
-        }
-
-        // No usable plain flavor at all: fall back to the best rich candidate even
-        // if it is single-line, so a rich-only clipboard still types something.
-        return normalizedRich.max(by: Self.ranks)?.text
-    }
-
-    /// Orders candidates worst-to-best: more recovered line breaks wins, ties broken
-    /// by source priority (HTML over RTF).
-    private static func ranks(_ lhs: Candidate, _ rhs: Candidate) -> Bool {
-        if lhs.lineBreakCount != rhs.lineBreakCount {
-            return lhs.lineBreakCount < rhs.lineBreakCount
-        }
-        return lhs.priority < rhs.priority
+        return nil
     }
 
     private static func attributedString(

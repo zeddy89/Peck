@@ -11,6 +11,20 @@ ClickPaste, but for macOS. A menu bar utility that types your clipboard as real 
 
 **Aborting.** Press **Esc** while the crosshair is up to cancel before you pick a target. While Peck is *typing*, press **Esc**, press the **global hotkey**, or **click the menu bar icon** to stop immediately — any held modifier is released so nothing sticks down.
 
+## Download & run
+
+Prebuilt releases are on the [Releases page](../../releases). Download `Peck.zip`, unzip it, and drag `Peck.app` to `/Applications`.
+
+The build is **ad-hoc signed and not notarized** (this is a personal/homelab tool, not a Developer-ID-signed release), so Gatekeeper refuses the first launch with *"Peck cannot be opened because the developer cannot be verified."* Clear the download quarantine once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Peck.app
+```
+
+Then open it normally. (Or: System Settings → Privacy & Security → find the blocked-app notice → **Open Anyway**. On recent macOS the old right-click → Open shortcut no longer bypasses this.)
+
+**After updating to a new build you may need to re-grant Accessibility.** An ad-hoc signature changes on every build, and macOS ties the Accessibility grant to the signature, so a fresh download can silently stop posting keystrokes while the toggle still *looks* enabled. If typing stops working after an update, remove Peck from System Settings → Privacy & Security → Accessibility and re-add it, or run `tccutil reset Accessibility dev.homelab.peck`, then relaunch.
+
 ## Building
 
 Open `Peck.xcodeproj` in Xcode (15 or later, macOS 13+ target), select the shared **Peck** scheme, and Product → Run. That's it. No dependencies, no packages, no storyboards, no sandbox.
@@ -83,7 +97,8 @@ If a multi-line paste comes out as a staircase, pick the mode matching your targ
 - **RDP (Windows App / Microsoft Remote Desktop):** either mode usually works; keycodes is safer for login screens.
 - **Password fields that block paste:** they can't block keystrokes. Keycode mode looks exactly like typing because it is.
 - **Multi-line pastes:** newlines are sent as Return, tabs as Tab, and CRLF collapses to a single Return. Be careful pasting multi-line text into a shell; each newline executes. Keep "Strip trailing newline" on so the *last* line doesn't auto-run, and leave "Press Return after typing" off unless you want it to.
-- **Control characters** other than tabs and newlines (raw ESC, other C0 bytes, DEL, C1 controls) are dropped rather than typed. Escape sequences hidden in copied text can't reach the target — and can't break out of the bracketed-paste wrapper from the inside.
+- **Control characters** other than tabs and newlines (raw ESC, other C0 bytes, DEL, C1 controls) are dropped rather than typed. Invisible Unicode format and bidirectional controls (zero-width spaces/joiners, right-to-left overrides, BOM) are dropped too, so what you see on the clipboard is what gets typed — no hidden characters slip into a console. Escape sequences hidden in copied text can't reach the target, and can't break out of the bracketed-paste wrapper from the inside.
+- **Rich text** is handled plain-text-first: if the clipboard has a plain-text flavor, that's what Peck types. Only a clipboard with *no* plain text at all falls back to RTF. Peck never runs the HTML importer on clipboard data — that importer can fetch remote resources while parsing, and Peck makes no network connections, by design.
 
 ## Layout
 

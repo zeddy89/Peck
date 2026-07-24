@@ -1,6 +1,6 @@
 import AppKit
 
-final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTextFieldDelegate {
 
     /// Fired when the global-hotkey enable checkbox is toggled (register/unregister).
     var onHotkeyToggle: ((Bool) -> Void)?
@@ -51,8 +51,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         preDelayField.formatter = integerFormatter
         preDelayField.alignment = .right
+        preDelayField.delegate = self
         keyDelayField.formatter = integerFormatter
         keyDelayField.alignment = .right
+        keyDelayField.delegate = self
 
         let thresholdFormatter = NumberFormatter()
         thresholdFormatter.numberStyle = .none
@@ -60,6 +62,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         thresholdFormatter.maximum = 10_000_000
         thresholdField.formatter = thresholdFormatter
         thresholdField.alignment = .right
+        thresholdField.delegate = self
 
         modePopup.addItems(withTitles: [
             "Keycodes — best for VM consoles / noVNC / RDP",
@@ -163,6 +166,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         prefs.indentWorkaround = IndentWorkaround(rawValue: indentPopup.indexOfSelectedItem) ?? .none
         prefs.pressReturnAfterTyping = pressReturnCheckbox.state == .on
         prefs.stripTrailingNewline = stripNewlineCheckbox.state == .on
+    }
+
+    /// Persist a numeric field the moment its edit commits (Return, Tab, or focus loss),
+    /// not only when the window closes. The status-item click and the global hotkey fire
+    /// regardless of which window is frontmost, so a committed-but-unsaved threshold edit
+    /// would otherwise let a paste run against the stale saved guardrail value.
+    func controlTextDidEndEditing(_ obj: Notification) {
+        let prefs = Preferences.shared
+        prefs.preTypeDelayMs = preDelayField.integerValue
+        prefs.keystrokeDelayMs = keyDelayField.integerValue
+        prefs.largePasteThreshold = thresholdField.integerValue
     }
 
     @objc private func hotkeyEnableToggled() {

@@ -190,7 +190,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openAccessibilitySettings() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-        NSWorkspace.shared.open(url)
+        // This is the one affordance guiding the user to the grant the whole app depends
+        // on, so don't let it silent-fail. Try the deep link, fall back to the top level
+        // of System Settings, and if even that won't open, spell out the manual path.
+        let deepLink = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        if NSWorkspace.shared.open(deepLink) { return }
+
+        let topLevel = URL(string: "x-apple.systempreferences:com.apple.preference.security")!
+        if NSWorkspace.shared.open(topLevel) { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Couldn't open System Settings"
+        alert.informativeText = "Open System Settings → Privacy & Security → Accessibility "
+            + "and enable Peck so it can post keystrokes."
+        alert.runModal()
     }
 }

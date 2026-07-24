@@ -18,7 +18,19 @@ build_app() {
         cp Peck/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
     fi
 
-    cat > "$app/Contents/Info.plist" <<'EOF'
+    # Single source of truth for the version: read it from the Xcode project rather
+    # than hardcoding, so the fallback build can't ship a stale version string when the
+    # project is bumped.
+    # grep -m1 reads the file directly and stops at the first match (no pipe that head
+    # could close early and SIGPIPE under `set -o pipefail`). `|| true` keeps a missing
+    # key from tripping errexit; the defaults below then apply.
+    local version build_number
+    version="$(grep -m1 'MARKETING_VERSION' Peck.xcodeproj/project.pbxproj | sed 's/.*= \([0-9.]*\);.*/\1/' || true)"
+    build_number="$(grep -m1 'CURRENT_PROJECT_VERSION' Peck.xcodeproj/project.pbxproj | sed 's/.*= \([0-9]*\);.*/\1/' || true)"
+    version="${version:-1.0.1}"
+    build_number="${build_number:-1}"
+
+    cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -34,9 +46,9 @@ build_app() {
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>${version}</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>${build_number}</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -68,7 +80,10 @@ EOF
     local attempt
     for attempt in 1 2 3 4 5; do
         xattr -cr "$app" 2>/dev/null || true
-        if codesign --force -s - "$app" 2>/dev/null; then
+        # -o runtime opts into the hardened runtime (library validation), matching the
+        # Xcode build. It blocks same-user dylib injection into a process that holds the
+        # Accessibility grant. Ad-hoc signing (-s -) still applies the flag.
+        if codesign --force -o runtime -s - "$app" 2>/dev/null; then
             break
         fi
         if [[ "$attempt" -eq 5 ]]; then
