@@ -27,6 +27,11 @@ final class OverlayWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        // Only a real human click picks a target. Ignore synthetic clicks — e.g. Peck's
+        // own focus click — so that even if a session somehow re-arms while a prior
+        // pick's focus click is still in flight, that click can't be mistaken for a
+        // second pick (which would read the clipboard and paste again).
+        guard !SyntheticEventTag.isSynthetic(event) else { return }
         let screenPoint = convertPoint(toScreen: event.locationInWindow)
         onPick?(screenPoint)
     }
@@ -42,6 +47,19 @@ final class OverlayWindow: NSWindow {
 final class OverlayView: NSView {
 
     private var mouseLocation: NSPoint?
+
+    // The hint banner is constant for the whole targeting session, so build its
+    // attributed string and measure it once rather than re-allocating and re-laying it
+    // out on every mouse-move repaint.
+    private static let hintText = "Click where you want your clipboard typed  •  Esc to cancel"
+    private let hintString: NSAttributedString = {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 15, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        return NSAttributedString(string: OverlayView.hintText, attributes: attributes)
+    }()
+    private lazy var hintSize: NSSize = hintString.size()
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -65,8 +83,25 @@ final class OverlayView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        mouseLocation = convert(event.locationInWindow, from: nil)
-        needsDisplay = true
+        let newLocation = convert(event.locationInWindow, from: nil)
+        let previous = mouseLocation
+        mouseLocation = newLocation
+        // Repaint only the crosshair strips — the old position (to erase the old lines)
+        // and the new one (to draw them) — instead of invalidating the whole display on
+        // every event. Full-screen redraws at ProMotion rates were the real cost here;
+        // the static hint pill stays in the backing store between moves.
+        if let previous { invalidateCrosshair(at: previous) }
+        invalidateCrosshair(at: newLocation)
+    }
+
+    /// Invalidate the two thin strips the crosshair through `point` occupies — a full-height
+    /// vertical column and a full-width horizontal row — as **separate** rects. Unioning
+    /// them would produce the whole-view bounding box (a full-height column ∪ a full-width
+    /// row encloses everything), defeating the scoping; keeping them separate leaves the
+    /// dirty region a thin cross that draw()'s clip actually limits the compositing to.
+    private func invalidateCrosshair(at point: NSPoint) {
+        setNeedsDisplay(NSRect(x: point.x - 1, y: bounds.minY, width: 3, height: bounds.height))
+        setNeedsDisplay(NSRect(x: bounds.minX, y: point.y - 1, width: bounds.width, height: 3))
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -88,15 +123,8 @@ final class OverlayView: NSView {
             horizontal.stroke()
         }
 
-        // Hint banner near the top of the screen.
-        let hint = "Click where you want your clipboard typed  •  Esc to cancel"
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 15, weight: .medium),
-            .foregroundColor: NSColor.white,
-        ]
-        let hintString = NSAttributedString(string: hint, attributes: attributes)
-        let textSize = hintString.size()
-
+        // Hint banner near the top of the screen (string and measurement cached).
+        let textSize = hintSize
         let padding: CGFloat = 14
         let pillRect = NSRect(
             x: bounds.midX - textSize.width / 2 - padding,

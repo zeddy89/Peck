@@ -137,10 +137,60 @@ final class TextProcessingTests: XCTestCase {
         XCTAssertTrue(plan.isEmpty)
     }
 
+    func testZeroWidthAndBidiFormatControlsAreDropped() {
+        // Trojan-Source class: invisible zero-width / bidi format controls (ZWSP,
+        // right-to-left override, BOM) never reach the target, so the clipboard's
+        // visible text can't differ from what actually gets typed.
+        let keys = TextProcessing.keySequence(for: "a\u{200B}b\u{202E}c\u{FEFF}d")
+        XCTAssertEqual(keys, [.literal("a"), .literal("b"), .literal("c"), .literal("d")])
+    }
+
+    func testEmojiZWJSequenceSurvivesFormatFilter() {
+        // A multi-scalar emoji legitimately embeds U+200D ZWJ; the format-control filter
+        // only rejects single-scalar characters, so the whole grapheme is typed intact.
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}" // 👨‍👩‍👧, one Character
+        XCTAssertEqual(Array(family).count, 1)
+        XCTAssertEqual(TextProcessing.keySequence(for: family), [.literal(Character(family))])
+    }
+
+    // MARK: - typedCharacterCount (large-paste guardrail)
+
+    func testTypedCharacterCountExcludesDroppedControls() {
+        // 3 visible characters plus control bytes that are never typed → count is 3.
+        XCTAssertEqual(TextProcessing.typedCharacterCount(for: "a\u{1B}b\u{7F}c", stripTrailingNewline: false), 3)
+    }
+
+    func testTypedCharacterCountCountsNewlinesAndRespectsStrip() {
+        // Newlines are typed (as Return) and counted; a stripped trailing newline isn't.
+        XCTAssertEqual(TextProcessing.typedCharacterCount(for: "a\nb\n", stripTrailingNewline: false), 4)
+        XCTAssertEqual(TextProcessing.typedCharacterCount(for: "a\nb\n", stripTrailingNewline: true), 3)
+    }
+
+    // MARK: - Bracketed-paste marker (shared with Typist's abort recovery)
+
+    func testBracketedPasteMarkerHelperMatchesLengthAndContent() {
+        XCTAssertEqual(TextProcessing.bracketedPasteMarker(open: true).count,
+                       TextProcessing.bracketedPasteMarkerLength)
+        XCTAssertEqual(TextProcessing.bracketedPasteMarker(open: false), [
+            .escape, .key(.literal("[")), .key(.literal("2")), .key(.literal("0")),
+            .key(.literal("1")), .key(.literal("~")),
+        ])
+    }
+
     // MARK: - TextNormalizer
 
     func testNormalizedLineBreaks() {
         XCTAssertEqual(TextNormalizer.normalizedLineBreaks("a\r\nb\rc\u{2028}d"), "a\nb\nc\nd")
+    }
+
+    func testNormalizedLineBreaksCollapsesCRLFRunsAndTrailingCR() {
+        // The single-pass scan must match the old chained-replace behavior on the tricky
+        // adjacencies: consecutive CRLFs, back-to-back CRs, and a CR at the very end.
+        XCTAssertEqual(TextNormalizer.normalizedLineBreaks("a\r\n\r\nb"), "a\n\nb")
+        XCTAssertEqual(TextNormalizer.normalizedLineBreaks("a\r\rb"), "a\n\nb")
+        XCTAssertEqual(TextNormalizer.normalizedLineBreaks("a\r"), "a\n")
+        XCTAssertEqual(TextNormalizer.normalizedLineBreaks("a\r\n"), "a\n")
+        XCTAssertEqual(TextNormalizer.normalizedLineBreaks("\r\nx"), "\nx")
     }
 
     func testLineBreakCount() {

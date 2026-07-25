@@ -1,0 +1,67 @@
+name: Release
+
+# Publish a downloadable Peck.app as a GitHub Release asset. Two triggers:
+#   - Push a version tag (the normal path):   git tag v1.0.1 && git push origin v1.0.1
+#   - Or push to the working branch with "[release]" in the commit message, for
+#     environments where tags can't be pushed directly — the runner then creates the
+#     tag and release itself via its GITHUB_TOKEN (default tag: v1.0.1).
+# Release assets are stored separately from Actions artifacts, so this is unaffected
+# by the Actions artifact storage quota.
+on:
+  push:
+    tags: ['v*']
+    branches: ['claude/**']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish
+    # Only actually release on a version tag, or on a branch push explicitly marked [release].
+    if: startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release]')
+    # Pinned to match CI so a green CI build predicts a green release build.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build (Release)
+        run: >
+          xcodebuild -project Peck.xcodeproj -scheme Peck -configuration Release
+          -derivedDataPath build -destination 'platform=macOS' build
+
+      - name: Test
+        run: xcodebuild -project Peck.xcodeproj -scheme Peck -destination 'platform=macOS' test
+
+      - name: Package Peck.app into a zip
+        run: |
+          APP="build/Build/Products/Release/Peck.app"
+          test -d "$APP" || { echo "App not found at $APP" >&2; exit 1; }
+          # ditto (not `zip`) preserves the code signature and the bundle's internal
+          # symlinks; a plain zip can corrupt the signature and break launch.
+          ditto -c -k --keepParent "$APP" "Peck.zip"
+          echo "SHA-256:"; shasum -a 256 Peck.zip
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            # Branch-triggered [release]: derive the tag from the project version so it
+            # tracks MARKETING_VERSION automatically instead of being hardcoded here.
+            VERSION="$(grep -m1 'MARKETING_VERSION' Peck.xcodeproj/project.pbxproj | sed 's/.*= \([0-9.]*\);.*/\1/')"
+            echo "name=v${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.tag.outputs.name }}"
+          # Create the release (and its tag) if new, otherwise just refresh the asset.
+          gh release create "$TAG" Peck.zip \
+            --title "Peck $TAG" \
+            --target "$GITHUB_SHA" \
+            --generate-notes \
+            || gh release upload "$TAG" Peck.zip --clobber

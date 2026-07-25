@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,12 +12,19 @@ permissions:
 jobs:
   test:
     name: Build & test
-    runs-on: macos-latest
+    # Pinned (not macos-latest) so CI and the release workflow compile with the same
+    # toolchain — a green build here then reliably predicts a green release build.
+    runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build (Debug)
         run: xcodebuild -project Peck.xcodeproj -scheme Peck -configuration Debug -destination 'platform=macOS' build
+
+      # Also compile the Release configuration the shipped app uses (whole-module
+      # optimization, assertions off), so Release-only breakage is caught before a release.
+      - name: Build (Release)
+        run: xcodebuild -project Peck.xcodeproj -scheme Peck -configuration Release -destination 'platform=macOS' build
 
       # PeckTests is a host-less logic bundle: no app launch, no TCC prompts,
       # and the KeyMapper tests skip if the runner has no resolvable layout.

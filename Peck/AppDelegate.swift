@@ -136,6 +136,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        let sendKeyItem = NSMenuItem(title: "Send Key", action: nil, keyEquivalent: "")
+        sendKeyItem.submenu = buildSendKeyMenu()
+        menu.addItem(sendKeyItem)
+
+        menu.addItem(.separator())
+
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -160,6 +166,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let button = statusItem.button else { return }
         statusItem.menu = menu
         button.performClick(nil)
+    }
+
+    // MARK: - Send Key submenu
+
+    private func buildSendKeyMenu() -> NSMenu {
+        let submenu = NSMenu()
+        addSpecialKeyItems(SpecialKeyCatalog.primary, to: submenu)
+        submenu.addItem(.separator())
+        addSpecialKeyItems(SpecialKeyCatalog.interrupts, to: submenu)
+        submenu.addItem(.separator())
+
+        let functionKeys = NSMenuItem(title: "Function Keys", action: nil, keyEquivalent: "")
+        let functionKeysMenu = NSMenu()
+        addSpecialKeyItems(SpecialKeyCatalog.functionKeys, to: functionKeysMenu)
+        functionKeys.submenu = functionKeysMenu
+        submenu.addItem(functionKeys)
+
+        let arrowKeys = NSMenuItem(title: "Arrow Keys", action: nil, keyEquivalent: "")
+        let arrowKeysMenu = NSMenu()
+        addSpecialKeyItems(SpecialKeyCatalog.arrowKeys, to: arrowKeysMenu)
+        arrowKeys.submenu = arrowKeysMenu
+        submenu.addItem(arrowKeys)
+
+        return submenu
+    }
+
+    private func addSpecialKeyItems(_ keys: [SpecialKey], to menu: NSMenu) {
+        for key in keys {
+            let item = NSMenuItem(title: key.title, action: #selector(sendSpecialKeyItem(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = key
+            menu.addItem(item)
+        }
+    }
+
+    @objc private func sendSpecialKeyItem(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? SpecialKey else { return }
+        guard AccessibilityGate.check(prompt: true) else { return }
+        // Let the menu finish dismissing so keyboard focus returns to the target the
+        // user is looking at (the console), then fire the key at it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            Typist.shared.sendSpecialKey(key)
+        }
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -190,7 +239,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openAccessibilitySettings() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-        NSWorkspace.shared.open(url)
+        // This is the one affordance guiding the user to the grant the whole app depends
+        // on, so don't let it silent-fail. Try the deep link, fall back to the top level
+        // of System Settings, and if even that won't open, spell out the manual path.
+        let deepLink = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        if NSWorkspace.shared.open(deepLink) { return }
+
+        let topLevel = URL(string: "x-apple.systempreferences:com.apple.preference.security")!
+        if NSWorkspace.shared.open(topLevel) { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Couldn't open System Settings"
+        alert.informativeText = "Open System Settings → Privacy & Security → Accessibility "
+            + "and enable Peck so it can post keystrokes."
+        alert.runModal()
     }
 }
