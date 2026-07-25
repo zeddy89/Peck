@@ -23,7 +23,7 @@ jobs:
     # Pinned to match CI so a green CI build predicts a green release build.
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build (Release)
         run: >
