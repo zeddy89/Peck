@@ -48,7 +48,10 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
           else
-            echo "name=v1.0.1" >> "$GITHUB_OUTPUT"
+            # Branch-triggered [release]: derive the tag from the project version so it
+            # tracks MARKETING_VERSION automatically instead of being hardcoded here.
+            VERSION="$(grep -m1 'MARKETING_VERSION' Peck.xcodeproj/project.pbxproj | sed 's/.*= \([0-9.]*\);.*/\1/')"
+            echo "name=v${VERSION}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Publish GitHub Release
