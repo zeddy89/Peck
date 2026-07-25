@@ -61,6 +61,9 @@ final class Typist {
     /// Typing runs on its own serial queue so it never blocks the main thread and
     /// so an in-flight job can be cancelled cleanly.
     private let queue = DispatchQueue(label: "dev.homelab.peck.typist", qos: .userInitiated)
+    /// One-shot special keys (Ctrl-Alt-Del, interrupts, function keys) post on their
+    /// own queue so they fire immediately instead of waiting behind a long paste.
+    private let specialKeyQueue = DispatchQueue(label: "dev.homelab.peck.specialkey", qos: .userInitiated)
     private let lock = NSLock()
     // Each `type()` gets a monotonically increasing generation. `cancel()` records
     // the newest generation issued so far as cancelled, so a run only aborts for a
@@ -329,4 +332,92 @@ final class Typist {
             postKey(CGKeyCode(modifier), down: false, flags: [], source: source)
         }
     }
+
+    // MARK: - Special keys
+
+    /// Fire a single key or chord (Ctrl-Alt-Del, Ctrl-C, a function key, an arrow) at
+    /// whatever application currently has keyboard focus. Runs off the main thread on a
+    /// dedicated queue so it's immediate, and balances its own modifiers so nothing is
+    /// left held down.
+    func sendSpecialKey(_ key: SpecialKey) {
+        specialKeyQueue.async { [weak self] in
+            self?.postChord(keyCode: key.keyCode, flags: key.flags)
+        }
+    }
+
+    /// Physically press every modifier in `flags`, tap the key, then release the
+    /// modifiers in reverse — the same real-key modelling the keycode engine uses, which
+    /// VNC/KVM targets track (they key off hardware modifier state, not event flags). A
+    /// short settle after pressing the modifiers gives a slow remote console time to see
+    /// them before the key lands.
+    private func postChord(keyCode: CGKeyCode, flags: CGEventFlags) {
+        let source = SyntheticEventTag.makeSource()
+        let settle: useconds_t = 10_000 // 10 ms
+
+        var modifiers: [CGKeyCode] = []
+        if flags.contains(.maskControl)   { modifiers.append(CGKeyCode(kVK_Control)) }
+        if flags.contains(.maskAlternate) { modifiers.append(CGKeyCode(kVK_Option)) }
+        if flags.contains(.maskShift)     { modifiers.append(CGKeyCode(kVK_Shift)) }
+        if flags.contains(.maskCommand)   { modifiers.append(CGKeyCode(kVK_Command)) }
+
+        for modifier in modifiers {
+            postKey(modifier, down: true, flags: flags, source: source)
+        }
+        if !modifiers.isEmpty { usleep(settle) }
+
+        postKey(keyCode, down: true, flags: flags, source: source)
+        postKey(keyCode, down: false, flags: flags, source: source)
+
+        if !modifiers.isEmpty { usleep(settle) }
+        for modifier in modifiers.reversed() {
+            postKey(modifier, down: false, flags: [], source: source)
+        }
+    }
+}
+
+/// A discrete key or key-combo Peck can fire on demand at the focused app — for the
+/// keys clipboard typing never sends (Ctrl-Alt-Del, interrupts, function keys, arrows)
+/// that KVM/IPMI/noVNC/RDP console work needs.
+struct SpecialKey {
+    let title: String
+    let keyCode: CGKeyCode
+    let flags: CGEventFlags
+
+    init(_ title: String, keyCode: Int, flags: CGEventFlags = []) {
+        self.title = title
+        self.keyCode = CGKeyCode(keyCode)
+        self.flags = flags
+    }
+}
+
+/// The curated set surfaced in the menu-bar "Send Key" submenu. Grouped so the menu
+/// stays organised; extend the arrays to add more.
+enum SpecialKeyCatalog {
+    /// The marquee one: Ctrl-Alt-Del for KVM/IPMI login screens and Windows. "Delete"
+    /// here is the PC Delete key (forward delete), not Backspace.
+    static let primary: [SpecialKey] = [
+        SpecialKey("Ctrl-Alt-Delete", keyCode: kVK_ForwardDelete, flags: [.maskControl, .maskAlternate]),
+    ]
+
+    /// Common console interrupts / control keys.
+    static let interrupts: [SpecialKey] = [
+        SpecialKey("Escape", keyCode: kVK_Escape),
+        SpecialKey("Ctrl-C  (interrupt)", keyCode: kVK_ANSI_C, flags: .maskControl),
+        SpecialKey("Ctrl-D  (EOF)", keyCode: kVK_ANSI_D, flags: .maskControl),
+        SpecialKey("Ctrl-Z  (suspend)", keyCode: kVK_ANSI_Z, flags: .maskControl),
+    ]
+
+    static let functionKeys: [SpecialKey] = [
+        SpecialKey("F1", keyCode: kVK_F1), SpecialKey("F2", keyCode: kVK_F2),
+        SpecialKey("F3", keyCode: kVK_F3), SpecialKey("F4", keyCode: kVK_F4),
+        SpecialKey("F5", keyCode: kVK_F5), SpecialKey("F6", keyCode: kVK_F6),
+        SpecialKey("F7", keyCode: kVK_F7), SpecialKey("F8", keyCode: kVK_F8),
+        SpecialKey("F9", keyCode: kVK_F9), SpecialKey("F10", keyCode: kVK_F10),
+        SpecialKey("F11", keyCode: kVK_F11), SpecialKey("F12", keyCode: kVK_F12),
+    ]
+
+    static let arrowKeys: [SpecialKey] = [
+        SpecialKey("Up", keyCode: kVK_UpArrow), SpecialKey("Down", keyCode: kVK_DownArrow),
+        SpecialKey("Left", keyCode: kVK_LeftArrow), SpecialKey("Right", keyCode: kVK_RightArrow),
+    ]
 }

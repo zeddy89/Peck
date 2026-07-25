@@ -72,6 +72,16 @@ Right-click the menu bar icon → Settings.
 
 **Secure Input.** If another app has *Secure Event Input* enabled when you arm (a password field, the lock screen, some terminals), Peck warns you that keystrokes may be swallowed and lets you proceed anyway.
 
+## Sending special keys
+
+Peck types your clipboard, but a console also needs keys that clipboard text can't carry — **Ctrl-Alt-Del** at a KVM/IPMI login, an interrupt in a shell, a function key in a BIOS menu. Right-click the menu bar icon → **Send Key**:
+
+- **Ctrl-Alt-Delete** — for IPMI/iDRAC KVMs, noVNC, RDP login screens, and Windows. ("Delete" is the PC Delete key, not Backspace.)
+- **Escape**, **Ctrl-C** (interrupt), **Ctrl-D** (EOF), **Ctrl-Z** (suspend).
+- **Function keys** F1–F12 and the **arrow keys**, in nested submenus.
+
+The key is sent to whatever window has focus — the console you're looking at — right after the menu closes, so there's no crosshair to click. Like typing, it needs the Accessibility grant, and the modifiers are pressed as real keys so VNC/RDP targets register them. (The guest's keyboard layout still applies, the same caveat as keycode typing.)
+
 ## Typing modes
 
 **Keycodes (default).** Resolves each character to a real virtual keycode plus modifiers using your *current* keyboard layout (via `UCKeyTranslate`), then presses the actual keys, including physical Shift/Option press-and-release around shifted characters. This is the mode remote consoles want: noVNC and friends key off hardware keycodes and modifier state, not injected text, and will type garbage if you feed them raw Unicode events. Works with QWERTY, Dvorak, AZERTY, whatever the layout is. Characters the layout can't produce (emoji, other scripts) automatically fall back to Unicode injection per character.
