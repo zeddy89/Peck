@@ -1,57 +1,86 @@
 # User guide
 
-## Settings
+## Basic Settings
 
-Right-click the menu bar icon → Settings.
+Right-click Peck's bird icon in the menu bar and open **Settings…**. Basic Settings also appears once after upgrading to this version. Choose **Fast** (2 ms), **Medium** (5 ms), or **Slow** (15 ms). These change only the delay between characters; any Advanced key-hold or Return delay remains in effect. Existing saved timings are preserved. An unmatched delay appears as **Custom** rather than pretending to use a preset. A fresh installation starts at Fast.
 
-| Setting | Default | Notes |
+Routine paste confirmations are off by default, including multiline and large pastes. Permission, Secure Input, strict-keycode, and target-change failures still stop delivery. You can opt into Return/size confirmations in Advanced. Fast is a timing choice, not proof that a remote console receives every character.
+
+## Advanced settings and presets
+
+Choose **Advanced…** in Basic Settings, or **Advanced > Advanced Settings…** in the status menu. Advanced shares Basic's visual styling and contains detailed timings, typing/indentation mode, profiles, calibration, and confirmation rules. Apply a preset explicitly to change its settings.
+
+| Preset | Mode | Focus delay | Character delay | Key hold | Extra Return delay |
+|---|---|---|---|---|---|
+| Native editor | Unicode | 400 ms | 2 ms | 0 ms | 0 ms |
+| Console (fast, unverified) | Keycodes, strict | 600 ms | 2 ms | 0 ms | 0 ms |
+| Vim / vi (paste + Insert mode required) | Keycodes, strict | 600 ms | 2 ms | 0 ms | 0 ms |
+| Console (conservative, optional) | Keycodes, strict | 1000 ms | 40 ms | 10 ms | 150 ms |
+| Vim bracketed paste (experimental) | Keycodes, strict, bracketed paste | 600 ms | 2 ms | 0 ms | 0 ms |
+
+These are test starting points. The slower option remains available explicitly; it did not establish a fix in the reported tests. Existing saved timings are unchanged until you apply a preset. Neither console preset has been qualified against vSphere or GLKVM by repeated exact-file comparison. The Vim preset does not send `:set paste` or enter Insert mode for you. All presets except experimental Vim bracketed paste turn the indentation workaround off. All set the Return warning rule and trailing-newline stripping, and disable automatic final Return. They preserve the master confirmation setting; an enabled rule remains inactive while the master is off. Custom keeps your current settings.
+
+| Setting | Fresh-install default | Notes |
 |---|---|---|
-| Delay before typing | 400 ms | Time between the focus click and the first keystroke. Slow remote consoles need the focus event to round-trip; bump this to 800–1000 ms for laggy VPN + noVNC combos. |
-| Keystroke delay | 15 ms | Per-character pacing. If a console drops or reorders characters (classic noVNC-over-WAN behavior), raise to 25–40 ms. |
-| Typing mode | Keycodes | See [Typing modes](#typing-modes). |
-| Auto-indent workaround | Off | Defeats a target that auto-indents what Peck types (which stacks indentation on multi-line pastes). See [Auto-indent workaround](#auto-indent-workaround). |
-| Confirm paste over | 1000 chars | Above this many characters, Peck shows the character and line count and asks before typing — the guardrail against pecking a 40 KB file into a root shell. Set to `0` to disable. |
-| Global hotkey | On, ⌃⌥⌘V | Toggle it on/off and record a new shortcut. Click the recorder, then press a modifier + key combination (needs at least one of ⌘/⌥/⌃). |
-| Press Return after typing | Off | Send one Return once the clipboard has been typed. |
-| Strip trailing newline from clipboard | On | Terminal copies almost always drag a trailing newline along, and in a console that newline runs the last command. This drops a single trailing newline before typing. |
-| Launch at login | Off | Registers Peck as a login item via `SMAppService`. The checkbox reflects the real registration state. See [docs/install.md](install.md#launch-at-login). |
+| Delay before typing | 400 ms | Lets the focus click settle before the first key. Increase experimentally if initial characters disappear. |
+| Keystroke delay | 2 ms | Wait between characters. This is not a verified safe speed for every console. |
+| Key hold | 0 ms | Interval between key-down and key-up, up to 100 ms. |
+| Extra Return delay | 0 ms | Additional pause after Return, up to 10,000 ms. |
+| Typing mode | Keycodes | Physical keycodes or Unicode injection. |
+| Strict keycodes | Off | Refuses a keycode paste containing characters the current layout cannot map, before sending the text. |
+| Paste confirmation master | Off | Enables the optional Return/size confirmation rules. |
+| Warn on Return rule | On, inactive until master enabled | Confirms whenever the prepared text contains Return, independently of the size rule. |
+| Auto-indent workaround | Off | Target-specific. Existing saved choices are preserved. |
+| Confirm paste over | 1000 chars, inactive until master enabled | Size rule; `0` disables only this rule. |
+| Crosshair hotkey | On, ⌃⌥⌘V | Record a shortcut containing Command, Option, or Control. |
+| Current-focus hotkey | On, ⌃⌥V | Uses the existing insertion point without another mouse click. |
+| Press Return after typing | Off | Adds Return to the prepared text and participates in the Return warning. |
+| Strip trailing newline | On | Removes exactly one trailing newline. Extra trailing blank lines still contain Return. |
+| Launch at login | Off | Requires a stable installed location. |
 
-**Secure Input.** If another app has *Secure Event Input* enabled when you arm (a password field, the lock screen, some terminals), Peck warns you that keystrokes may be swallowed and lets you proceed anyway.
+Progress represents text processed and events sent, not acknowledgement that a remote guest received them. Cancel stops pending typing and releases held keys. During active delivery, a human Escape is consumed locally to avoid changing vi's mode; its matching release is consumed too. Other physical keyboard or mouse-button input cancels the run and is passed through. Ordinary Escape is unchanged while idle. Peck refuses to start if its filtering input tap cannot be established. If macOS requests it, enable Input Monitoring as well as Accessibility.
 
-## Sending special keys
+Peck checks the captured local process and window repeatedly, including before key-down, and addresses keyboard events to the captured process. This reduces app-switch spill but does not atomically route to a particular window, browser tab, guest widget, or vi mode. An event already posted cannot be recalled. Target changes or lost Escape protection stop the run without automatically retrying; bracketed-paste cleanup is suppressed after detected target loss. Check the original editor before continuing. **Advanced > Last Run Status…** in the menu and the Typing Test window retain the result without displaying clipboard content. Test with harmless text after changing settings. Never automatically retry a command or password when delivery is uncertain.
 
-Peck types your clipboard, but a console also needs keys that clipboard text can't carry — **Ctrl-Alt-Del** at a KVM/IPMI login, an interrupt in a shell, a function key in a BIOS menu. Right-click the menu bar icon → **Send Key**:
+## Keeping the insertion point
 
-- **Ctrl-Alt-Delete** — for IPMI/iDRAC KVMs, noVNC, RDP login screens, and Windows. ("Delete" is the PC Delete key, not Backspace.)
-- **Escape**, **Ctrl-C** (interrupt), **Ctrl-D** (EOF), **Ctrl-Z** (suspend).
-- **Function keys** F1–F12 and the **arrow keys**, in nested submenus.
-
-The key is sent to whatever window has focus — the console you're looking at — right after the menu closes, so there's no crosshair to click. Like typing, it needs the Accessibility grant, and the modifiers are pressed as real keys so VNC/RDP targets register them. (The guest's keyboard layout still applies, the same caveat as keycode typing.)
+For editors where another click moves the cursor, first position the insertion point yourself. In vi/Vim, enable paste mode when supported and enter Insert mode. Then press **⌃⌥V**, or right-click Peck and choose **Type at Current Focus…**. Peck captures the local window before the menu and restores that application without another mouse click. It still cannot detect the guest editor's mode. If the captured window cannot be verified, it stops. Current-focus typing uses the same optional confirmation rules as crosshair typing; there is no forced popup. The original ⌃⌥⌘V crosshair shortcut remains separate. Either can be changed or disabled in Settings; an unavailable replacement preserves the previous working binding. A conflicting new default is disabled and reported. Ordinary ⌘V is unchanged.
 
 ## Typing modes
 
-**Keycodes (default).** Resolves each character to a real virtual keycode plus modifiers using your *current* keyboard layout (via `UCKeyTranslate`), then presses the actual keys, including physical Shift/Option press-and-release around shifted characters. This is the mode remote consoles want: noVNC and friends key off hardware keycodes and modifier state, not injected text, and will type garbage if you feed them raw Unicode events. Works with QWERTY, Dvorak, AZERTY, whatever the layout is. Characters the layout can't produce (emoji, other scripts) automatically fall back to Unicode injection per character.
+Keycodes maps characters using the Mac's active keyboard layout and sends physical modifier events. The guest layout must agree: a US Mac and German guest can produce different punctuation from the same keycodes. With strict mode off, unmappable characters fall back to Unicode injection, which may not work in a remote console. Strict mode preflights the entire prepared text and blocks that fallback.
 
-**Unicode.** Injects characters directly with `keyboardSetUnicodeString`. Broadest character support, works great in native macOS apps and most browsers, unreliable in VNC-style consoles.
+Unicode injects text directly and is a useful starting point for native Mac editors. It is not a general solution for VNC-style consoles, which may depend on keycodes. When macOS Secure Input is active, Peck refuses to start because it cannot rely on receiving abort Escape. Detecting Secure Input during a run stops delivery. This does not mean every password field enables Secure Input; the restriction follows the detected system state. Close or leave the application enabling it, then retry only after checking the target.
 
-One caveat for the keycode mode: the *guest* VM's keyboard layout matters too. If your Mac is on US QWERTY but the VM console is set to German, symbols will land wrong. That's inherent to how VNC transmits keys, and it's the same behavior ClickPaste has on Windows.
+## Auto-indent and vi/Vim
 
-## Auto-indent workaround
+An editor can insert indentation, comment prefixes, or matching brackets as Peck types. Sending the original whitespace afterward can produce an indentation staircase. This is separate from dropped keystrokes.
 
-Because Peck *types* rather than pastes, targets with auto-indent (vim with `autoindent`, most GUI code editors) re-indent each new line — and Peck then types that line's own leading whitespace on top, so indentation stacks into a staircase. Plain shells (bash/zsh) don't auto-indent, so this only bites in editors.
+For vi/Vim, use a scratch file, press Escape, enter `:set paste`, then enter insert mode before targeting the editor. Afterward, press Escape and enter `:set nopaste`. Some vi implementations do not support this option. The Vim preset adjusts Peck only; it cannot configure the guest editor.
 
-Two opt-in modes handle it (off by default, since each is target-specific):
+- **Off:** sends the prepared text without editor-specific indent handling.
+- **Bracketed paste:** sends paste markers for targets that support them. Unsupported targets may display or misinterpret the markers. Test in a scratch buffer; do not assume markers prevent execution in every shell or console.
+- **Overwrite indent:** sends Shift-Command-Left after Return to replace automatic indentation in compatible native Mac editors. This is a Mac editing shortcut, not a portable remote-console command. Leave it off for vSphere, GLKVM, and other guest consoles.
 
-- **Bracketed paste — terminals & vim.** Wraps the keystrokes in bracketed-paste markers (`ESC[200~` … `ESC[201~`), which tells vim/readline "this is a paste": no auto-indent, and a multi-line command isn't executed line-by-line — it waits for you to press Return. Needs a target that supports bracketed paste (most modern terminals, shells, and vim do).
-- **Overwrite indent — code editors.** After each Return, Peck selects back to the start of the line (⇧⌘←) so the editor's auto-indent is replaced by the text's real indentation. Works best in Cocoa-based editors where ⌘← goes to the true line start.
+### Experimental Vim profile
 
-If a multi-line paste comes out as a staircase, pick the mode matching your target; leave it off for plain shells.
+**Vim bracketed paste (experimental)** sends the existing bracketed-paste markers instead of mode-entry commands. Supported Vim can recognize those markers from Normal or Insert mode, but terminal configuration and editor context matter. Generic vi is not guaranteed to support this. Peck does not probe the guest or automatically send Escape, `:set paste`, or `i`. Qualify this profile in a scratch file before relying on it; no new remote qualification is implied by adding the preset.
 
-## Notes for the usual suspects
+## Special keys
 
-- **Proxmox noVNC / vSphere web console:** keycode mode, keystroke delay 25 ms or higher if characters drop. Great for root passwords into fresh VMs before SSH is up.
-- **RDP (Windows App / Microsoft Remote Desktop):** either mode usually works; keycodes is safer for login screens.
-- **Password fields that block paste:** they can't block keystrokes. Keycode mode looks exactly like typing because it is.
-- **Multi-line pastes:** newlines are sent as Return, tabs as Tab, and CRLF collapses to a single Return. Be careful pasting multi-line text into a shell; each newline executes. Keep "Strip trailing newline" on so the *last* line doesn't auto-run, and leave "Press Return after typing" off unless you want it to.
-- **Control characters** other than tabs and newlines (raw ESC, other C0 bytes, DEL, C1 controls) are dropped rather than typed. Invisible Unicode format and bidirectional controls (zero-width spaces/joiners, right-to-left overrides, BOM) are dropped too, so what you see on the clipboard is what gets typed — no hidden characters slip into a console. Escape sequences hidden in copied text can't reach the target, and can't break out of the bracketed-paste wrapper from the inside.
-- **Rich text** is handled plain-text-first: if the clipboard has a plain-text flavor, that's what Peck types. Only a clipboard with *no* plain text at all falls back to RTF. Peck never runs the HTML importer on clipboard data — that importer can fetch remote resources while parsing, and Peck makes no network connections, by design.
+Right-click the menu bar icon and choose **Advanced > Send Key** for Ctrl-Alt-Delete, Escape, Ctrl-C, Ctrl-D, Ctrl-Z, function keys, or arrows. The target is captured before the menu opens and rechecked after it closes. Clipboard typing and special keys use the same event queue so modifier events cannot interleave. Interrupt actions cancel current typing before their chord is sent.
+
+## Clipboard and command handling
+
+Newlines become Return, tabs become Tab, and CRLF becomes one Return. A shell may execute every newline. Stripping the final newline does not protect earlier lines or multiple trailing blank lines. Enable the optional Advanced confirmation master and Return rule if you want a prompt before command-bearing newlines.
+
+Peck reads clipboard content plain-text-first and can fall back to RTF when no plain text exists. It does not use the HTML importer or keep a clipboard history. Unsupported control and invisible formatting characters are filtered. The app does not use network services; the separately invoked maintainer notarization script submits a release bundle to Apple.
+
+## Testing
+
+Use the local typing test to check startup characters, punctuation, indentation, and long lines with harmless content. The [compatibility guide](compatibility.md) explains how to save results and compare them exactly. A local success does not establish remote-console compatibility, and screenshots can hide low-contrast punctuation.
+
+
+## Profiles and calibration
+
+See [profiles and calibration](profiles-and-calibration.md) for portable settings and repeatable speed trials.

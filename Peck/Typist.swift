@@ -1,39 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// Every synthetic event Peck posts is stamped with a magic
-/// `kCGEventSourceUserData` value so Peck can recognize its own events when they
-/// come back around through the window server. `KeyMonitor` relies on this: the
-/// bracketed-paste markers contain a synthetic Escape (keycode 53), and without
-/// the tag the Esc-to-abort monitor would cancel the very paste that posted it.
-///
-/// The tag is a self-identification mechanism, not a trust boundary: the value
-/// is public and any process that can post events could forge it. Never use
-/// `isSynthetic` as a security signal — here a forged tag can only make Peck
-/// ignore an Esc it would otherwise ignore anyway, and an untagged forged Esc
-/// merely aborts typing, which is the fail-safe direction.
-enum SyntheticEventTag {
-    /// 'PECK' — copied from the source into every event it creates.
-    static let magic: Int64 = 0x5045_434B
-
-    static func makeSource() -> CGEventSource? {
-        guard let source = CGEventSource(stateID: .combinedSessionState) else {
-            // Events created against a nil source fall back to an untagged
-            // default source, which would resurrect the self-abort bug — make
-            // the (unlikely) failure visible instead of silent.
-            NSLog("Peck: CGEventSource creation failed; synthetic events will be untagged")
-            return nil
-        }
-        source.userData = magic
-        return source
-    }
-
-    static func isSynthetic(_ event: NSEvent) -> Bool {
-        guard let cgEvent = event.cgEvent else { return false }
-        return cgEvent.getIntegerValueField(.eventSourceUserData) == magic
-    }
-}
-
 /// Turns clipboard text into synthetic keystrokes.
 ///
 /// Two engines:
@@ -51,31 +18,41 @@ enum SyntheticEventTag {
 final class Typist {
 
     static let shared = Typist()
-    private init() {}
+    private init() {
+        abortMonitor.filter.onCancel = { [weak self] reason in
+            guard let self else { return }
+            if reason == .interaction { self.abortLock.withLock { self.userInteracted = true } }
+            self.cancel()
+        }
+        abortMonitor.onInterruption = { [weak self] in
+            self?.abortLock.withLock { self?.userInteracted = true }
+            self?.cancel()
+            self?.recordFailure("Escape protection was interrupted. Typing stopped; retry only after permission is restored.")
+        }
+    }
+    private let abortMonitor = KeyMonitor()
+    private let abortLock = NSLock()
+    private var userInteracted = false
+    private var destinationPID: pid_t?
+    private var contentAllowed: () -> Bool = { false }
+    private var closingMarker = false
+    private var heldKeys = Set<CGKeyCode>()
+    private(set) var lastStatus = "Ready. Select an insertion point before typing."
+
+
+    var onProgress: ((String) -> Void)?
+    var onRunCompleted: ((Bool) -> Void)?
+    var onRunStarted: ((ProfileSettings) -> Void)?
+    var onFailure: ((String) -> Void)?
+    private var keyHold: TimeInterval = 0 // Only accessed on the serial delivery queue.
 
     /// Fired on the main thread when typing starts (`true`) and when it ends
     /// (`false`) — whether it finished or was aborted. Drives the menu-bar
     /// "typing" icon and the Esc/hotkey abort monitor.
     var onTypingStateChange: ((Bool) -> Void)?
 
-    /// Typing runs on its own serial queue so it never blocks the main thread and
-    /// so an in-flight job can be cancelled cleanly.
-    private let queue = DispatchQueue(label: "dev.homelab.peck.typist", qos: .userInitiated)
-    /// One-shot special keys (Ctrl-Alt-Del, interrupts, function keys) post on their
-    /// own queue so they fire immediately instead of waiting behind a long paste.
-    private let specialKeyQueue = DispatchQueue(label: "dev.homelab.peck.specialkey", qos: .userInitiated)
-    private let lock = NSLock()
-    // Each `type()` gets a monotonically increasing generation. `cancel()` records
-    // the newest generation issued so far as cancelled, so a run only aborts for a
-    // cancel that targets it (or a later one) — a second paste can never reset the
-    // flag out from under a pending abort, and a stale cancel can't kill a new run.
-    private var _generation = 0
-    private var _cancelledThrough = 0
-    private var _isTyping = false
-
-    /// Whether a typing job is currently running. Used to route the global hotkey
-    /// to "abort" instead of "arm" while typing.
-    var isTyping: Bool { lock.withLock { _isTyping } }
+    private let delivery = DeliveryQueue()
+    var isTyping: Bool { delivery.isTyping }
 
     /// Enqueue clipboard text to be typed. Returns immediately; the optional focus
     /// click, the pre-type settle, and the typing all proceed on the dedicated queue
@@ -91,8 +68,10 @@ final class Typist {
     func type(_ rawText: String,
               focusPoint: CGPoint? = nil,
               settleDelay: TimeInterval = 0,
-              preTypeDelay: TimeInterval = 0) {
+              preTypeDelay: TimeInterval = 0,
+              target: CapturedTarget) {
         let prefs = Preferences.shared
+        let settingsSnapshot = ProfileSettings(preferences: prefs)
         let plan = TextProcessing.typingPlan(
             for: rawText,
             workaround: prefs.indentWorkaround,
@@ -102,113 +81,154 @@ final class Typist {
         // Nothing to type → never engage typing state or post a focus click.
         guard !plan.isEmpty else { return }
 
-        let generation = lock.withLock { () -> Int in
-            _generation += 1
-            return _generation
+        // Resolve once on the caller's main thread. A run never rereads settings
+        // or the input layout after its safety checks.
+        let mapper = prefs.typingMode == .keycodes ? KeyMapper() : nil
+        if prefs.strictKeycodes && prefs.typingMode == .keycodes,
+           !PasteSafety.passesStrictPreflight(plan: plan, mappingAvailable: mapper != nil,
+                maps: { mapper?.stroke(for: $0) != nil }) {
+            recordFailure("Cannot type this clipboard using the current keyboard layout. Strict keycode mode stopped before clicking or typing. No clipboard text is shown.")
+            return
         }
+        guard !delivery.isTyping else { return }
+        guard abortMonitor.start() else {
+            recordFailure(abortMonitor.unavailableReason)
+            return
+        }
+        abortLock.withLock { userInteracted = false }
+        guard let generation = delivery.begin() else { abortMonitor.stop(); return }
+        onRunStarted?(settingsSnapshot)
         setTyping(true)
 
-        let keystrokeDelayMs = prefs.keystrokeDelayMs
+        let keystrokeDelayMs = settingsSnapshot.keystrokeDelayMs
         let workaround = prefs.indentWorkaround
-        queue.async { [weak self] in
+        let hold = TimeInterval(settingsSnapshot.keyHoldMs) / 1000
+        let newlineDelay = TimeInterval(settingsSnapshot.newlineDelayMs) / 1000
+        delivery.submit { [weak self] in
             self?.run(plan: plan, generation: generation, keystrokeDelayMs: keystrokeDelayMs,
                       workaround: workaround, focusPoint: focusPoint,
-                      settleDelay: settleDelay, preTypeDelay: preTypeDelay)
+                      settleDelay: settleDelay, preTypeDelay: preTypeDelay, mapper: mapper,
+                      hold: hold, newlineDelay: newlineDelay, target: target)
         }
     }
 
     /// Request that in-progress (and already-queued) typing stop as soon as
     /// possible. Thread-safe.
     func cancel() {
-        lock.withLock { _cancelledThrough = _generation }
+        delivery.cancel()
     }
 
     private func isCancelled(_ generation: Int) -> Bool {
-        lock.withLock { _cancelledThrough >= generation }
+        delivery.isCancelled(generation)
     }
 
     private func run(plan: [TypingInstruction], generation: Int, keystrokeDelayMs: Int,
                      workaround: IndentWorkaround, focusPoint: CGPoint?,
-                     settleDelay: TimeInterval, preTypeDelay: TimeInterval) {
-        // Balances the synchronous setTyping(true) in type(); fires whether this run
-        // finishes, is aborted, or bails during the pre-type window.
-        defer { setTyping(false) }
-
-        let source = SyntheticEventTag.makeSource()
-        let delayMicroseconds = UInt32(max(0, keystrokeDelayMs)) * 1_000
-        let mapper = makeMapperIfNeeded()
-
-        // Focus the target, then let it settle — inside the cancellable window, so Esc /
-        // the hotkey / the icon can still stop the paste before the first keystroke and
-        // no click is posted at all if the user aborts during the settle.
-        if let focusPoint {
-            if sleepUnlessCancelled(settleDelay, generation: generation) { return }
-            MouseClicker.click(at: focusPoint)
-            if sleepUnlessCancelled(preTypeDelay, generation: generation) { return }
+                     settleDelay: TimeInterval, preTypeDelay: TimeInterval, mapper: KeyMapper?,
+                     hold: TimeInterval, newlineDelay: TimeInterval, target: CapturedTarget) {
+        var completed = false
+        defer {
+            contentAllowed = { false }
+            destinationPID = nil
+            delivery.finish()
+            stopAbortMonitorWhenIdle()
+            setTyping(false)
+            let success = completed
+            DispatchQueue.main.async { [weak self] in self?.onRunCompleted?(success) }
         }
-
-        // In bracketed-paste mode, once the opening ESC[200~ has been posted the target
-        // is in paste-receiving mode; if we abort we must still send the closing ESC[201~
-        // or it stays stuck buffering everything the user types next. But only until the
-        // plan's *own* closing marker has been posted — after that the target is already
-        // out of paste mode, so an abort in the trailing-Return window (with "press Return
-        // after typing" on) must not emit a second, stray ESC[201~.
-        let bracketed = workaround == .bracketedPaste
-        let openMarkerEnd = TextProcessing.bracketedPasteMarkerLength - 1
-        // The close marker ends at the last instruction, unless an appended trailing Return
-        // (the only way a bracketed plan ends in .returnKey — the marker ends in "~") sits
-        // after it.
-        var trailingReturn = false
-        if let last = plan.last, last == .key(.returnKey) { trailingReturn = true }
-        let closeMarkerEnd = bracketed ? plan.count - 1 - (trailingReturn ? 1 : 0) : -1
-        var needsCloseOnAbort = false
-
-        for (index, instruction) in plan.enumerated() {
-            if isCancelled(generation) {
-                if needsCloseOnAbort {
-                    emitBracketedPasteClose(source: source, mapper: mapper)
+        destinationPID = target.identity.pid
+        guard let source = SyntheticEventTag.makeSource() else {
+            recordFailure("Could not create tagged input events. Nothing was typed.")
+            return
+        }
+        keyHold = hold
+        let runner = DeliveryRunner(cancelled: { self.isCancelled(generation) })
+        report("Waiting for focus and released modifiers…")
+        // Physical state only: synthetic modifiers must not extend this wait.
+        let released = {
+            CGEventSource.flagsState(.hidSystemState)
+                .intersection([.maskShift, .maskControl, .maskAlternate, .maskCommand]).isEmpty
+        }
+        let active = {
+            self.abortMonitor.isHealthy && DispatchQueue.main.sync { TargetApplication.matches(target) }
+        }
+        var clickTargetLost = false
+        let focus: () -> Void = {
+            DispatchQueue.main.sync {
+                if let focusPoint {
+                    guard TargetApplication.remainsAtPoint(target, point: focusPoint) else {
+                        clickTargetLost = true
+                        self.cancel()
+                        return
+                    }
+                    MouseClicker.click(at: focusPoint)
+                } else {
+                    // Preserve the existing insertion point. No synthetic mouse event.
+                    NSRunningApplication(processIdentifier: target.identity.pid)?
+                        .activate(options: [.activateIgnoringOtherApps])
                 }
-                // A character was typed atomically (press() balances its own
-                // modifiers), so nothing should be held — but release defensively
-                // so an aborted shifted/optioned keystroke can never strand a
-                // modifier physically down.
-                releaseModifiers(source: source)
-                break
             }
-            autoreleasepool {
-                execute(instruction, source: source, mapper: mapper)
+        }
+        let preparation = runner.prepare(settleDelay: settleDelay, focusDelay: preTypeDelay,
+            modifiersReleased: released, focus: focus, targetReady: active)
+        guard preparation == .posted else {
+            if preparation == .targetNotReady || clickTargetLost {
+                recordFailure("The selected window was unavailable, did not become active, or modifiers remained held. Nothing was typed.")
+            } else { report("Cancelled before typing.") }
+            return
+        }
+        abortMonitor.beginDelivery()
+        var targetLost = false
+        let streamReady = {
+            if !active() { targetLost = true }
+            return !targetLost
+        }
+        contentAllowed = {
+            streamReady() && (self.closingMarker || !self.isCancelled(generation))
+        }
+        var lastReport = Date.distantPast
+        let outcome = runner.run(plan: plan,
+            characterDelay: TimeInterval(min(10000, max(0, keystrokeDelayMs))) / 1000,
+            newlineDelay: newlineDelay, bracketed: workaround == .bracketedPaste,
+            targetReady: streamReady,
+            permitsCleanup: { !self.abortLock.withLock { self.userInteracted } && self.abortMonitor.isHealthy },
+            executeCleanup: { instruction in
+                self.closingMarker = true
+                self.execute(instruction, source: source, mapper: mapper)
+                self.closingMarker = false
+            },
+            execute: { instruction in
+                autoreleasepool { self.execute(instruction, source: source, mapper: mapper) }
+            }, progress: { count in
+                if count == plan.count || Date().timeIntervalSince(lastReport) >= 0.1 {
+                    self.report("Posted \(count) of \(plan.count) steps. Receipt unverified.")
+                    lastReport = Date()
+                }
+            }, cleanup: { self.releaseModifiers(source: source) })
+        if outcome == .targetChanged || targetLost {
+            if IsSecureEventInputEnabled() {
+                recordFailure("Stopped because Secure Input became active and Escape protection was unavailable. Check the original editor before retrying.")
+                return
             }
-            if bracketed {
-                if index == openMarkerEnd { needsCloseOnAbort = true }
-                if index == closeMarkerEnd { needsCloseOnAbort = false }
-            }
-            if delayMicroseconds > 0 {
-                usleep(delayMicroseconds)
-            }
+            recordFailure("Stopped because the selected application/window changed or Escape protection was lost. No automatic retry. Check the original editor before continuing.")
+        } else if outcome == .cancelled {
+            report("Cancelled. Some input may already have reached the target; check the original editor.")
+        } else {
+            completed = true
+            report("Finished posting \(plan.count) steps. Receipt is unverified; check the target.")
         }
     }
 
-    /// Sleep up to `seconds`, waking early (and returning true) if the run is cancelled,
-    /// so even a long pre-type delay stays promptly abortable. Returns the cancellation
-    /// state at the end.
-    private func sleepUnlessCancelled(_ seconds: TimeInterval, generation: Int) -> Bool {
-        guard seconds > 0 else { return isCancelled(generation) }
-        let step: TimeInterval = 0.02
-        var remaining = seconds
-        while remaining > 0 {
-            if isCancelled(generation) { return true }
-            let chunk = min(step, remaining)
-            Thread.sleep(forTimeInterval: chunk)
-            remaining -= chunk
+    private func report(_ message: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.lastStatus = message
+            self?.onProgress?(message)
         }
-        return isCancelled(generation)
     }
-
-    /// Post the closing bracketed-paste marker (ESC[201~) to release a target left in
-    /// paste-receiving mode by an aborted bracketed run.
-    private func emitBracketedPasteClose(source: CGEventSource?, mapper: KeyMapper?) {
-        for instruction in TextProcessing.bracketedPasteMarker(open: false) {
-            execute(instruction, source: source, mapper: mapper)
+    func recordFailure(_ message: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.lastStatus = message
+            self?.onFailure?(message)
         }
     }
 
@@ -235,22 +255,17 @@ final class Typist {
         postKey(CGKeyCode(kVK_Command), down: false, flags: [], source: source)
     }
 
-    private func setTyping(_ typing: Bool) {
-        lock.withLock { _isTyping = typing }
+    private func stopAbortMonitorWhenIdle() {
         DispatchQueue.main.async { [weak self] in
-            self?.onTypingStateChange?(typing)
+            guard let self, !self.delivery.isTyping else { return }
+            self.abortMonitor.stop()
         }
     }
 
-    private func makeMapperIfNeeded() -> KeyMapper? {
-        guard Preferences.shared.typingMode == .keycodes else { return nil }
-
-        if Thread.isMainThread {
-            return KeyMapper()
-        }
-
-        return DispatchQueue.main.sync {
-            KeyMapper()
+    private func setTyping(_ typing: Bool) {
+        let state = delivery.isTyping
+        DispatchQueue.main.async { [weak self] in
+            self?.onTypingStateChange?(state)
         }
     }
 
@@ -284,6 +299,7 @@ final class Typist {
         }
 
         postKey(keyCode, down: true, flags: flags, source: source)
+        if keyHold > 0 { Thread.sleep(forTimeInterval: keyHold) }
         postKey(keyCode, down: false, flags: flags, source: source)
 
         if flags.contains(.maskAlternate) {
@@ -295,9 +311,16 @@ final class Typist {
     }
 
     private func postKey(_ keyCode: CGKeyCode, down: Bool, flags: CGEventFlags, source: CGEventSource?) {
+        guard let pid = destinationPID else { return }
+        if down {
+            guard contentAllowed() else { return }
+        } else {
+            guard heldKeys.remove(keyCode) != nil else { return }
+        }
         guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down) else { return }
         event.flags = flags
-        event.post(tap: .cghidEventTap)
+        if down { heldKeys.insert(keyCode) }
+        event.postToPid(pid)
     }
 
     // MARK: - Unicode engine
@@ -312,8 +335,10 @@ final class Typist {
         down.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
         up.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
 
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        guard let pid = destinationPID, contentAllowed() else { return }
+        down.postToPid(pid)
+        if keyHold > 0 { Thread.sleep(forTimeInterval: keyHold) }
+        up.postToPid(pid)
     }
 
     // MARK: - Abort safety
@@ -322,14 +347,8 @@ final class Typist {
     /// can never leave Shift/Option/Command/Control stuck down. A key-up for a key
     /// that isn't down is a harmless no-op.
     private func releaseModifiers(source: CGEventSource?) {
-        let modifiers = [
-            kVK_Shift, kVK_RightShift,
-            kVK_Option, kVK_RightOption,
-            kVK_Command, kVK_RightCommand,
-            kVK_Control, kVK_RightControl,
-        ]
-        for modifier in modifiers {
-            postKey(CGKeyCode(modifier), down: false, flags: [], source: source)
+        for key in Array(heldKeys) {
+            postKey(key, down: false, flags: [], source: source)
         }
     }
 
@@ -337,12 +356,34 @@ final class Typist {
 
     /// Fire a single key or chord (Ctrl-Alt-Del, Ctrl-C, a function key, an arrow) at
     /// whatever application currently has keyboard focus. Runs off the main thread on a
-    /// dedicated queue so it's immediate, and balances its own modifiers so nothing is
+    /// serial delivery queue after cancelling typing, and balances its modifiers so nothing is
     /// left held down.
-    func sendSpecialKey(_ key: SpecialKey) {
-        specialKeyQueue.async { [weak self] in
-            self?.postChord(keyCode: key.keyCode, flags: key.flags)
-        }
+    func sendSpecialKey(_ key: SpecialKey, target: CapturedTarget?) {
+        guard let target else { recordFailure("No focused target window was identified. Nothing was sent."); return }
+        guard abortMonitor.start() else { recordFailure(abortMonitor.unavailableReason); return }
+        delivery.interrupt({ [weak self] cancelled in
+            guard let self else { return }
+            defer {
+                self.contentAllowed = { false }
+                self.destinationPID = nil
+            }
+            let runner = DeliveryRunner(cancelled: cancelled)
+            guard runner.wait(0.25), runner.awaitReady({
+                self.abortMonitor.isHealthy && DispatchQueue.main.sync { TargetApplication.matches(target) }
+            }) else { return }
+            self.destinationPID = target.identity.pid
+            self.abortMonitor.beginDelivery()
+            self.contentAllowed = {
+                !cancelled() && self.abortMonitor.isHealthy
+                    && DispatchQueue.main.sync { TargetApplication.matches(target) }
+            }
+            self.postChord(keyCode: key.keyCode, flags: key.flags)
+        }, completion: { [weak self] in
+            guard let self else { return }
+            self.stopAbortMonitorWhenIdle()
+            self.setTyping(false)
+        })
+        setTyping(true)
     }
 
     /// Physically press every modifier in `flags`, tap the key, then release the
@@ -351,7 +392,10 @@ final class Typist {
     /// short settle after pressing the modifiers gives a slow remote console time to see
     /// them before the key lands.
     private func postChord(keyCode: CGKeyCode, flags: CGEventFlags) {
-        let source = SyntheticEventTag.makeSource()
+        guard let source = SyntheticEventTag.makeSource() else {
+            recordFailure("Could not create tagged input events. No special key was sent.")
+            return
+        }
         let settle: useconds_t = 10_000 // 10 ms
 
         var modifiers: [CGKeyCode] = []

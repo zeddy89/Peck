@@ -10,10 +10,92 @@ final class Preferences {
         case unicode = 1    // direct character injection (broadest character support)
     }
 
+    enum SpeedChoice: Int, CaseIterable {
+        case fast = 2, medium = 5, slow = 15
+        var title: String {
+            switch self {
+            case .fast: return "Fast"
+            case .medium: return "Medium"
+            case .slow: return "Slow"
+            }
+        }
+    }
+    var speedChoice: SpeedChoice? { SpeedChoice(rawValue: keystrokeDelayMs) }
+    /// Character delay only. Advanced hold and Return pacing remain explicit.
+    func applySpeed(_ speed: SpeedChoice) { keystrokeDelayMs = speed.rawValue }
+    var confirmBeforeTyping: Bool {
+        get { defaults.bool(forKey: "confirmBeforeTyping") }
+        set { defaults.set(newValue, forKey: "confirmBeforeTyping") }
+    }
+
+    enum Preset: Int, CaseIterable {
+        case custom, native, console, vim, conservative, vimBracketed
+        var title: String {
+            switch self {
+            case .custom: return "Custom (keep current settings)"
+            case .native: return "Native editor"
+            case .console: return "Console (fast, unverified)"
+            case .vim: return "Vim / vi (paste + Insert mode required)"
+            case .conservative: return "Console (conservative, optional)"
+            case .vimBracketed: return "Vim bracketed paste (experimental)"
+            }
+        }
+    }
+
+    /// Presets are explicit actions. Registering new defaults never migrates an
+    /// existing user's delays or editor workaround behind their back.
+    func apply(_ preset: Preset) {
+        guard preset != .custom else { return }
+        typingMode = preset == .native ? .unicode : .keycodes
+        preTypeDelayMs = preset == .native ? 400 : (preset == .conservative ? 1000 : 600)
+        keystrokeDelayMs = preset == .conservative ? 40 : 2
+        keyHoldMs = preset == .conservative ? 10 : 0
+        newlineDelayMs = preset == .conservative ? 150 : 0
+        strictKeycodes = preset != .native
+        warnOnReturn = true
+        pressReturnAfterTyping = false
+        stripTrailingNewline = true
+        indentWorkaround = preset == .vimBracketed ? .bracketedPaste : .none
+    }
+
+    var keyHoldMs: Int {
+        get { min(100, max(0, defaults.integer(forKey: "keyHoldMs"))) }
+        set { defaults.set(min(100, max(0, newValue)), forKey: "keyHoldMs") }
+    }
+    var newlineDelayMs: Int {
+        get { min(10000, max(0, defaults.integer(forKey: "newlineDelayMs"))) }
+        set { defaults.set(min(10000, max(0, newValue)), forKey: "newlineDelayMs") }
+    }
+    var strictKeycodes: Bool {
+        get { defaults.bool(forKey: "strictKeycodes") }
+        set { defaults.set(newValue, forKey: "strictKeycodes") }
+    }
+    var warnOnReturn: Bool {
+        get { defaults.bool(forKey: "warnOnReturn") }
+        set { defaults.set(newValue, forKey: "warnOnReturn") }
+    }
+    var hasSeenTypingTest: Bool {
+        get { defaults.bool(forKey: "hasSeenTypingTest") }
+        set { defaults.set(newValue, forKey: "hasSeenTypingTest") }
+    }
+
     /// Default global hotkey: ⌃⌥⌘V.
     enum HotkeyDefault {
         static let keyCode = Int(kVK_ANSI_V)
         static let carbonModifiers = Int(controlKey | optionKey | cmdKey)
+    }
+
+    var currentFocusHotkeyEnabled: Bool {
+        get { defaults.bool(forKey: "currentFocusHotkeyEnabled") }
+        set { defaults.set(newValue, forKey: "currentFocusHotkeyEnabled") }
+    }
+    var currentFocusHotkeyKeyCode: Int {
+        get { defaults.integer(forKey: "currentFocusHotkeyKeyCode") }
+        set { defaults.set(newValue, forKey: "currentFocusHotkeyKeyCode") }
+    }
+    var currentFocusHotkeyModifiers: Int {
+        get { defaults.integer(forKey: "currentFocusHotkeyModifiers") }
+        set { defaults.set(newValue, forKey: "currentFocusHotkeyModifiers") }
     }
 
     private enum Keys {
@@ -36,8 +118,16 @@ final class Preferences {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
+            "confirmBeforeTyping": false,
+            "currentFocusHotkeyEnabled": true,
+            "currentFocusHotkeyKeyCode": Int(kVK_ANSI_V),
+            "currentFocusHotkeyModifiers": Int(controlKey | optionKey),
+            "keyHoldMs": 0,
+            "newlineDelayMs": 0,
+            "strictKeycodes": false,
+            "warnOnReturn": true,
             Keys.preTypeDelayMs: 400,
-            Keys.keystrokeDelayMs: 15,
+            Keys.keystrokeDelayMs: 2,
             Keys.typingMode: TypingMode.keycodes.rawValue,
             Keys.hotkeyEnabled: true,
             Keys.hotkeyKeyCode: HotkeyDefault.keyCode,
@@ -51,14 +141,14 @@ final class Preferences {
 
     /// Delay between the synthetic focus click and the first keystroke.
     var preTypeDelayMs: Int {
-        get { defaults.integer(forKey: Keys.preTypeDelayMs) }
-        set { defaults.set(newValue, forKey: Keys.preTypeDelayMs) }
+        get { min(10000, max(0, defaults.integer(forKey: Keys.preTypeDelayMs))) }
+        set { defaults.set(min(10000, max(0, newValue)), forKey: Keys.preTypeDelayMs) }
     }
 
     /// Delay between individual keystrokes. Laggy consoles like it slower.
     var keystrokeDelayMs: Int {
-        get { defaults.integer(forKey: Keys.keystrokeDelayMs) }
-        set { defaults.set(newValue, forKey: Keys.keystrokeDelayMs) }
+        get { min(10000, max(0, defaults.integer(forKey: Keys.keystrokeDelayMs))) }
+        set { defaults.set(min(10000, max(0, newValue)), forKey: Keys.keystrokeDelayMs) }
     }
 
     var typingMode: TypingMode {
@@ -86,8 +176,8 @@ final class Preferences {
     /// Above this many characters, arming asks for confirmation before typing.
     /// 0 disables the guardrail entirely.
     var largePasteThreshold: Int {
-        get { defaults.integer(forKey: Keys.largePasteThreshold) }
-        set { defaults.set(newValue, forKey: Keys.largePasteThreshold) }
+        get { min(10000000, max(0, defaults.integer(forKey: Keys.largePasteThreshold))) }
+        set { defaults.set(min(10000000, max(0, newValue)), forKey: Keys.largePasteThreshold) }
     }
 
     /// Press Return once after the clipboard has been typed.

@@ -31,7 +31,9 @@ enum HotkeyFormatter {
     /// would collide with ordinary typing, so the recorder rejects it.
     static func isValid(keyCode: Int, carbonModifiers: Int) -> Bool {
         let requiredModifiers = controlKey | optionKey | cmdKey
-        return (carbonModifiers & requiredModifiers) != 0 && keyLabels[keyCode] != nil
+        let allowedModifiers = requiredModifiers | shiftKey
+        return carbonModifiers >= 0 && carbonModifiers & ~allowedModifiers == 0
+            && (carbonModifiers & requiredModifiers) != 0 && keyLabels[keyCode] != nil
     }
 
     static let keyLabels: [Int: String] = {

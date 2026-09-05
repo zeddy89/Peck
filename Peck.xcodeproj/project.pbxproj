@@ -34,6 +34,21 @@
 		B000000000000000000000D4 /* HotkeyFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000000D4 /* HotkeyFormatterTests.swift */; };
 		B000000000000000000000E5 /* HotkeyFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000D /* HotkeyFormatter.swift */; };
 		B00000000000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000012 /* Assets.xcassets */; };
+		B00000000000000000000020 /* DeliveryRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000020 /* DeliveryRunner.swift */; };
+		B00000000000000000000021 /* TypingTestWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000021 /* TypingTestWindowController.swift */; };
+		B000000000000000000000D5 /* DeliveryRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000000D5 /* DeliveryRunnerTests.swift */; };
+		B000000000000000000000E6 /* DeliveryRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000020 /* DeliveryRunner.swift */; };
+		B000000000000000000000E7 /* KeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000E /* KeyMonitor.swift */; };
+		B00000000000000000000030 /* TypingProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000030 /* TypingProfile.swift */; };
+		B00000000000000000000031 /* ProfileSharing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000031 /* ProfileSharing.swift */; };
+		B00000000000000000000032 /* Calibration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000032 /* Calibration.swift */; };
+		B000000000000000000000D6 /* TypingProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000000D6 /* TypingProfileTests.swift */; };
+		B000000000000000000000D7 /* HotkeyManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000000D7 /* HotkeyManagerTests.swift */; };
+		B000000000000000000000D8 /* CalibrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000000D8 /* CalibrationTests.swift */; };
+		B000000000000000000000E8 /* TypingProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000030 /* TypingProfile.swift */; };
+		B000000000000000000000E9 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000007 /* HotkeyManager.swift */; };
+		B000000000000000000000EA /* Calibration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000032 /* Calibration.swift */; };
+		B00000000000000000000040 /* BasicSettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000040 /* BasicSettingsWindowController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -62,6 +77,16 @@
 		F000000000000000000000AA /* Peck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Peck.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F000000000000000000000BB /* PeckTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PeckTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000000000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F00000000000000000000020 /* DeliveryRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveryRunner.swift; sourceTree = "<group>"; };
+		F00000000000000000000021 /* TypingTestWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingTestWindowController.swift; sourceTree = "<group>"; };
+		F000000000000000000000D5 /* DeliveryRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveryRunnerTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000030 /* TypingProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingProfile.swift; sourceTree = "<group>"; };
+		F00000000000000000000031 /* ProfileSharing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSharing.swift; sourceTree = "<group>"; };
+		F00000000000000000000032 /* Calibration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Calibration.swift; sourceTree = "<group>"; };
+		F000000000000000000000D6 /* TypingProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingProfileTests.swift; sourceTree = "<group>"; };
+		F000000000000000000000D7 /* HotkeyManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManagerTests.swift; sourceTree = "<group>"; };
+		F000000000000000000000D8 /* CalibrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000040 /* BasicSettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BasicSettingsWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -106,6 +131,12 @@
 		700000000000000000000002 /* Peck */ = {
 			isa = PBXGroup;
 			children = (
+				F00000000000000000000040 /* BasicSettingsWindowController.swift */,
+				F00000000000000000000032 /* Calibration.swift */,
+				F00000000000000000000031 /* ProfileSharing.swift */,
+				F00000000000000000000030 /* TypingProfile.swift */,
+				F00000000000000000000021 /* TypingTestWindowController.swift */,
+				F00000000000000000000020 /* DeliveryRunner.swift */,
 				F00000000000000000000001 /* main.swift */,
 				F00000000000000000000002 /* AppDelegate.swift */,
 				F00000000000000000000003 /* TargetingController.swift */,
@@ -130,6 +161,10 @@
 		700000000000000000000004 /* PeckTests */ = {
 			isa = PBXGroup;
 			children = (
+				F000000000000000000000D8 /* CalibrationTests.swift */,
+				F000000000000000000000D7 /* HotkeyManagerTests.swift */,
+				F000000000000000000000D6 /* TypingProfileTests.swift */,
+				F000000000000000000000D5 /* DeliveryRunnerTests.swift */,
 				F000000000000000000000D0 /* CoordinateMathTests.swift */,
 				F000000000000000000000D1 /* TextProcessingTests.swift */,
 				F000000000000000000000D2 /* PreferencesTests.swift */,
@@ -226,6 +261,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B00000000000000000000040 /* BasicSettingsWindowController.swift in Sources */,
+				B00000000000000000000032 /* Calibration.swift in Sources */,
+				B00000000000000000000031 /* ProfileSharing.swift in Sources */,
+				B00000000000000000000030 /* TypingProfile.swift in Sources */,
+				B00000000000000000000021 /* TypingTestWindowController.swift in Sources */,
+				B00000000000000000000020 /* DeliveryRunner.swift in Sources */,
 				B00000000000000000000001 /* main.swift in Sources */,
 				B00000000000000000000002 /* AppDelegate.swift in Sources */,
 				B00000000000000000000003 /* TargetingController.swift in Sources */,
@@ -249,6 +290,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B000000000000000000000EA /* Calibration.swift in Sources */,
+				B000000000000000000000E9 /* HotkeyManager.swift in Sources */,
+				B000000000000000000000E8 /* TypingProfile.swift in Sources */,
+				B000000000000000000000D8 /* CalibrationTests.swift in Sources */,
+				B000000000000000000000D7 /* HotkeyManagerTests.swift in Sources */,
+				B000000000000000000000D6 /* TypingProfileTests.swift in Sources */,
+				B000000000000000000000E7 /* KeyMonitor.swift in Sources */,
+				B000000000000000000000E6 /* DeliveryRunner.swift in Sources */,
+				B000000000000000000000D5 /* DeliveryRunnerTests.swift in Sources */,
 				B000000000000000000000D0 /* CoordinateMathTests.swift in Sources */,
 				B000000000000000000000D1 /* TextProcessingTests.swift in Sources */,
 				B000000000000000000000D2 /* PreferencesTests.swift in Sources */,
@@ -323,7 +373,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Peck;
@@ -335,7 +385,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.homelab.peck;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -350,7 +400,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Peck;
@@ -362,7 +412,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.homelab.peck;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -375,10 +425,10 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 7;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.homelab.peckTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -391,10 +441,10 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 7;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.homelab.peckTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;

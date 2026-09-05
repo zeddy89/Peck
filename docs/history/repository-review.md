@@ -1,4 +1,6 @@
-# Peck — Repository Review
+# Historical repository review
+
+This is an archived review of an earlier revision. Findings and implementation descriptions below are historical, not the current product contract. See [current verification](../verification.md) and [architecture](../architecture.md).
 
 Reviewed at commit `fe3c41b` ("Settings: apply popup/checkbox changes immediately,
 not on window close"). Reviewer read every source file, every test, the project

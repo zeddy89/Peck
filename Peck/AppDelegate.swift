@@ -4,11 +4,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem!
     private let targeting = TargetingController()
-    private let hotkey = HotkeyManager()
-    private let abortMonitor = KeyMonitor()
+    private let hotkey = HotkeyManager(action: .crosshair)
+    private let focusHotkey = HotkeyManager(action: .currentFocus)
+    private var menuTarget: CapturedTarget?
+    private var lastRunFailed = false
     private lazy var settings = SettingsWindowController()
+    private lazy var basicSettings = BasicSettingsWindowController()
+    private lazy var typingTest = TypingTestWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        buildMainMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem.button {
@@ -29,40 +34,175 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if Typist.shared.isTyping {
                 Typist.shared.cancel()
-            } else {
+            } else if NSApp.modalWindow == nil {
                 self.targeting.toggle()
             }
         }
-        if Preferences.shared.hotkeyEnabled {
-            hotkey.register()
+        focusHotkey.onActivate = { [weak self] in
+            guard let self else { return }
+            if Typist.shared.isTyping { Typist.shared.cancel(); return }
+            if self.targeting.isArmed { self.targeting.disarm(); return }
+            guard NSApp.modalWindow == nil else { return }
+            // Capture before a confirmation can activate Peck.
+            self.targeting.typeAtCurrentFocus(TargetApplication.current())
+        }
+        let prefs = Preferences.shared
+        if prefs.hotkeyEnabled && !configureHotkey(currentFocus: false, enabled: true, showError: false) {
+            prefs.hotkeyEnabled = false
+        }
+        if prefs.currentFocusHotkeyEnabled && !configureHotkey(currentFocus: true, enabled: true, showError: false) {
+            prefs.currentFocusHotkeyEnabled = false
         }
 
         // Drive the abort monitor and the "typing" icon from typing state (fired on
         // the main thread by Typist).
         Typist.shared.onTypingStateChange = { [weak self] typing in
             guard let self else { return }
-            typing ? self.abortMonitor.start() : self.abortMonitor.stop()
+            if typing { self.lastRunFailed = false }
+            self.typingTest.typingStateChanged(typing)
             self.isTyping = typing
+            if !typing {
+                self.statusItem.button?.title = ""
+                self.statusItem.length = NSStatusItem.squareLength
+            }
             self.refreshIcon(armed: self.targeting.isArmed)
         }
-        abortMonitor.onEscape = {
-            Typist.shared.cancel()
+        Typist.shared.onRunStarted = { [weak self] settings in
+            self?.typingTest.deliveryStarted(settings: settings)
         }
+        Typist.shared.onRunCompleted = { [weak self] success in
+            self?.typingTest.deliveryFinished(success: success)
+        }
+        Typist.shared.onProgress = { [weak self] message in
+            guard let self else { return }
+            // The existing status button never activates an app or steals target
+            // focus. Clicking its visible × cancels just like Esc/the hotkey.
+            self.typingTest.updateStatus(message)
+            self.statusItem.button?.toolTip = message + (Typist.shared.isTyping ? " Click to cancel." : " Right-click for last status.")
+            guard Typist.shared.isTyping else { return }
+            let words = message.split(separator: " ")
+            self.statusItem.button?.title = words.first == "Posted" && words.count > 3
+                ? " \(words[1])/\(words[3]) ×" : " … ×"
+            self.statusItem.length = NSStatusItem.variableLength
+        }
+        Typist.shared.onFailure = { [weak self] message in
+            guard let self else { return }
+            self.lastRunFailed = true
+            self.statusItem.button?.toolTip = message
+            self.typingTest.updateStatus(message)
+            self.refreshIcon(armed: self.targeting.isArmed)
+        }
+        typingTest.onArm = { [weak self] in self?.targeting.toggle() }
+        typingTest.onSettings = { [weak self] in self?.openSettings() }
 
-        settings.onHotkeyToggle = { [weak self] enabled in
-            if enabled { self?.hotkey.register() } else { self?.hotkey.unregister() }
+        settings.onHotkeyToggle = { [weak self] currentFocus, enabled in
+            self?.configureHotkey(currentFocus: currentFocus, enabled: enabled) ?? false
         }
-        settings.onHotkeyChanged = { [weak self] in
-            guard let self, Preferences.shared.hotkeyEnabled else { return }
-            if !self.hotkey.reregister() {
-                // The combo is likely already claimed by another app.
-                NSSound.beep()
-            }
+        settings.onHotkeyChanged = { [weak self] currentFocus, code, modifiers in
+            let prefs = Preferences.shared
+            return self?.configureHotkey(currentFocus: currentFocus,
+                enabled: currentFocus ? prefs.currentFocusHotkeyEnabled : prefs.hotkeyEnabled,
+                candidate: HotkeyBinding(keyCode: code, modifiers: modifiers)) ?? false
+        }
+        settings.onBeforeSettingsChange = { [weak self] in self?.typingTest.endSessionForTermination() }
+        settings.onImportProfile = { [weak self] in self?.importProfile() }
+        settings.onExportProfile = { [weak self] in self?.exportProfile() }
+        settings.onBasic = { [weak self] in self?.openSettings() }
+        settings.onTypingTest = { [weak self] in self?.openTypingTest() }
+        settings.onValuesChanged = { [weak self] in self?.basicSettings.refresh() }
+        basicSettings.onAdvanced = { [weak self] in self?.openAdvanced() }
+        basicSettings.onSpeed = { [weak self] choice in self?.applySpeed(choice) }
+        basicSettings.statusProvider = { [weak self] in
+            (failed: self?.lastRunFailed ?? false, armed: self?.targeting.isArmed ?? false,
+             message: Typist.shared.lastStatus)
         }
 
         // Nudge the Accessibility prompt at first launch so the user
         // grants it before they actually need it.
         _ = AccessibilityGate.check(prompt: true)
+        if !UserDefaults.standard.bool(forKey: "hasSeenBasicSettings") || CommandLine.arguments.contains("--show-settings") {
+            UserDefaults.standard.set(true, forKey: "hasSeenBasicSettings")
+            openSettings()
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows && !Typist.shared.isTyping { openSettings() }
+        return true
+    }
+
+    private func buildMainMenu() {
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Peck")
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit Peck", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+        main.addItem(editItem)
+        NSApp.mainMenu = main
+    }
+
+    @discardableResult
+    private func configureHotkey(currentFocus: Bool, enabled: Bool,
+                                 candidate: HotkeyBinding? = nil, showError: Bool = true) -> Bool {
+        let prefs = Preferences.shared
+        let selected = candidate ?? HotkeyBinding(
+            keyCode: currentFocus ? prefs.currentFocusHotkeyKeyCode : prefs.hotkeyKeyCode,
+            modifiers: currentFocus ? prefs.currentFocusHotkeyModifiers : prefs.hotkeyCarbonModifiers)
+        let other = HotkeyBinding(keyCode: currentFocus ? prefs.hotkeyKeyCode : prefs.currentFocusHotkeyKeyCode,
+            modifiers: currentFocus ? prefs.hotkeyCarbonModifiers : prefs.currentFocusHotkeyModifiers)
+        let otherEnabled = currentFocus ? prefs.hotkeyEnabled : prefs.currentFocusHotkeyEnabled
+        // At startup the original crosshair binding has priority; a new default
+        // current-focus shortcut must not displace a saved custom crosshair key.
+        let otherRegistered = currentFocus ? hotkey.binding != nil : focusHotkey.binding != nil
+        let conflict = enabled && otherEnabled && (showError || otherRegistered) && selected == other
+        let manager = currentFocus ? focusHotkey : hotkey
+        guard selected.isValid && !conflict && (!enabled || manager.register(selected)) else {
+            let message = "Could not register the \(currentFocus ? "current-focus" : "crosshair") shortcut. Choose a different Command/Option/Control combination. Any previously working binding was kept."
+            Typist.shared.recordFailure(message)
+            if showError {
+                let alert = NSAlert()
+                alert.messageText = "Shortcut unavailable"
+                alert.informativeText = message
+                alert.runModal()
+            }
+            return false
+        }
+        if !enabled { manager.unregister() }
+        if currentFocus {
+            prefs.currentFocusHotkeyKeyCode = selected.keyCode
+            prefs.currentFocusHotkeyModifiers = selected.modifiers
+            prefs.currentFocusHotkeyEnabled = enabled
+        } else {
+            prefs.hotkeyKeyCode = selected.keyCode
+            prefs.hotkeyCarbonModifiers = selected.modifiers
+            prefs.hotkeyEnabled = enabled
+        }
+        return true
+    }
+
+    @objc private func importProfile() {
+        guard !Typist.shared.isTyping else { return }
+        typingTest.endSessionForTermination()
+        if settings.window?.isVisible == true { settings.commitPendingEdits() }
+        if ProfileSharing.importProfile() { settings.refresh() }
+    }
+    @objc private func exportProfile() {
+        guard !Typist.shared.isTyping else { return }
+        typingTest.endSessionForTermination()
+        if settings.window?.isVisible == true { settings.commitPendingEdits() }
+        ProfileSharing.exportProfile()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -71,28 +211,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if settings.window?.isVisible == true {
             settings.commitPendingEdits()
         }
+        typingTest.endSessionForTermination()
     }
 
     private var isTyping = false
 
     private func refreshIcon(armed: Bool) {
         statusItem.button?.image = Self.icon(armed: armed, typing: isTyping)
+        if !isTyping {
+            statusItem.button?.title = armed ? " •" : (lastRunFailed ? " !" : "")
+            statusItem.length = armed || lastRunFailed ? NSStatusItem.variableLength : NSStatusItem.squareLength
+        }
     }
 
-    // MARK: - Status item
-
+    // Keep the actual Peck artwork at every state; copy before resizing so the
+    // Basic and Advanced header images retain their full native resolution.
     private static func icon(armed: Bool, typing: Bool = false) -> NSImage? {
-        let name: String
-        if typing {
-            name = "keyboard.fill" // distinct glyph while a paste is being typed
-        } else if armed {
-            name = "dot.scope"
-        } else {
-            name = "scope"
-        }
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: "Peck")
-            ?? NSImage(systemSymbolName: "scope", accessibilityDescription: "Peck")
-        image?.isTemplate = true
+        let image = NSApp.applicationIconImage.copy() as? NSImage
+        image?.size = NSSize(width: 18, height: 18)
+        image?.isTemplate = false
         return image
     }
 
@@ -112,60 +249,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func showMenu() {
+        menuTarget = TargetApplication.current()
         let menu = NSMenu()
         menu.delegate = self
-
-        let armTitle: String
-        if Typist.shared.isTyping {
-            armTitle = "Abort Typing"
-        } else {
-            armTitle = targeting.isArmed ? "Cancel Targeting" : "Arm Targeting"
+        func item(_ title: String, _ action: Selector, in targetMenu: NSMenu) {
+            let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            entry.target = self
+            targetMenu.addItem(entry)
         }
-        let armItem = NSMenuItem(title: armTitle, action: #selector(toggleTargeting), keyEquivalent: "")
-        armItem.target = self
-        menu.addItem(armItem)
-
-        if Preferences.shared.hotkeyEnabled {
-            let shortcut = HotkeyFormatter.displayString(
-                keyCode: Preferences.shared.hotkeyKeyCode,
-                carbonModifiers: Preferences.shared.hotkeyCarbonModifiers)
-            let hint = NSMenuItem(title: "Global hotkey:  \(shortcut)", action: nil, keyEquivalent: "")
-            hint.isEnabled = false
-            menu.addItem(hint)
+        item(Typist.shared.isTyping ? "Cancel Typing" : "Type at Current Focus", #selector(typeAtCurrentFocus), in: menu)
+        item(targeting.isArmed ? "Cancel Targeting" : "Choose a Target…", #selector(toggleTargeting), in: menu)
+        menu.addItem(.separator())
+        let speed = NSMenuItem(title: "Typing Speed", action: nil, keyEquivalent: "")
+        let speedMenu = NSMenu()
+        for choice in Preferences.SpeedChoice.allCases {
+            let entry = NSMenuItem(title: "\(choice.title) (\(choice.rawValue) ms)", action: #selector(selectMenuSpeed(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.tag = choice.rawValue
+            entry.state = Preferences.shared.speedChoice == choice ? .on : .off
+            speedMenu.addItem(entry)
         }
-
-        menu.addItem(.separator())
-
-        let sendKeyItem = NSMenuItem(title: "Send Key", action: nil, keyEquivalent: "")
-        sendKeyItem.submenu = buildSendKeyMenu()
-        menu.addItem(sendKeyItem)
-
-        menu.addItem(.separator())
-
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        settingsItem.target = self
-        menu.addItem(settingsItem)
-
+        if Preferences.shared.speedChoice == nil {
+            let custom = NSMenuItem(title: "Custom: \(Preferences.shared.keystrokeDelayMs) ms", action: nil, keyEquivalent: "")
+            custom.isEnabled = false
+            speedMenu.addItem(custom)
+        }
+        speed.submenu = speedMenu
+        menu.addItem(speed)
+        item("Settings…", #selector(openSettings), in: menu)
+        let advanced = NSMenuItem(title: "Advanced", action: nil, keyEquivalent: "")
+        let advancedMenu = NSMenu()
+        item("Advanced Settings…", #selector(openAdvanced), in: advancedMenu)
+        item("Typing Test & Calibration…", #selector(openTypingTest), in: advancedMenu)
+        let sendKey = NSMenuItem(title: "Send Key", action: nil, keyEquivalent: "")
+        sendKey.submenu = buildSendKeyMenu()
+        advancedMenu.addItem(sendKey)
+        item("Last Run Status…", #selector(showLastStatus), in: advancedMenu)
+        advancedMenu.addItem(.separator())
+        item("Import Profile…", #selector(importProfile), in: advancedMenu)
+        item("Export Profile…", #selector(exportProfile), in: advancedMenu)
+        advanced.submenu = advancedMenu
+        menu.addItem(advanced)
         if !AccessibilityGate.check(prompt: false) {
-            let axItem = NSMenuItem(
-                title: "⚠︎ Grant Accessibility Permission…",
-                action: #selector(openAccessibilitySettings),
-                keyEquivalent: "")
-            axItem.target = self
-            menu.addItem(axItem)
+            item("Grant Accessibility Permission…", #selector(openAccessibilitySettings), in: menu)
         }
-
         menu.addItem(.separator())
-
-        let quitItem = NSMenuItem(title: "Quit Peck", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(quitItem)
-
-        // Attach + present as one unit. Guarding on the button ensures we never leave
-        // a menu attached without a matching present/close cycle (which would make
-        // every later left-click reopen the menu instead of arming).
+        menu.addItem(withTitle: "Quit Peck", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         guard let button = statusItem.button else { return }
         statusItem.menu = menu
         button.performClick(nil)
+    }
+
+    @objc private func selectMenuSpeed(_ sender: NSMenuItem) {
+        guard let choice = Preferences.SpeedChoice(rawValue: sender.tag) else { return }
+        applySpeed(choice)
+    }
+    private func applySpeed(_ choice: Preferences.SpeedChoice) {
+        guard !Typist.shared.isTyping else { return }
+        typingTest.endSessionForTermination()
+        if settings.window?.isVisible == true { settings.commitPendingEdits() }
+        Preferences.shared.applySpeed(choice)
+        settings.refresh()
+        basicSettings.refresh()
     }
 
     // MARK: - Send Key submenu
@@ -204,11 +349,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func sendSpecialKeyItem(_ sender: NSMenuItem) {
         guard let key = sender.representedObject as? SpecialKey else { return }
         guard AccessibilityGate.check(prompt: true) else { return }
-        // Let the menu finish dismissing so keyboard focus returns to the target the
-        // user is looking at (the console), then fire the key at it.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            Typist.shared.sendSpecialKey(key)
-        }
+        targeting.disarm()
+        Typist.shared.sendSpecialKey(key, target: menuTarget)
+
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -231,9 +374,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func openSettings() {
+    @objc private func typeAtCurrentFocus() {
+        targeting.typeAtCurrentFocus(menuTarget)
+    }
+
+    @objc private func showLastStatus() {
+        guard !Typist.shared.isTyping else { return }
+        let alert = NSAlert()
+        alert.messageText = "Last Peck Run"
+        alert.informativeText = Typist.shared.lastStatus
+        alert.runModal()
+    }
+
+    @objc private func openTypingTest() {
+        guard !Typist.shared.isTyping else { return }
         NSApp.activate(ignoringOtherApps: true)
-        settings.refresh() // re-sync externally-changeable state (e.g. launch-at-login)
+        typingTest.showWindow(nil)
+        typingTest.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func openSettings() {
+        guard !Typist.shared.isTyping else { return }
+        typingTest.endSessionForTermination()
+        if settings.window?.isVisible == true { settings.window?.close() }
+        NSApp.activate(ignoringOtherApps: true)
+        basicSettings.showWindow(nil)
+        basicSettings.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func openAdvanced() {
+        guard !Typist.shared.isTyping else { return }
+        typingTest.endSessionForTermination()
+        basicSettings.window?.close()
+        NSApp.activate(ignoringOtherApps: true)
+        settings.refresh()
         settings.showWindow(nil)
         settings.window?.makeKeyAndOrderFront(nil)
     }

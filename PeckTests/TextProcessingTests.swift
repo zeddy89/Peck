@@ -265,4 +265,13 @@ final class TextProcessingTests: XCTestCase {
                                              stripTrailingNewline: true, appendReturn: false)
         XCTAssertEqual(plan, [.key(.literal("c")), .key(.literal("m")), .key(.literal("d"))])
     }
+    func testEmptyClipboardCannotExecuteAppendedReturn() {
+        for input in ["", "\n", "\u{0000}"] {
+            for workaround in [IndentWorkaround.none, .bracketedPaste, .overwriteIndent] {
+                XCTAssertTrue(TextProcessing.typingPlan(for: input, workaround: workaround,
+                    stripTrailingNewline: true, appendReturn: true).isEmpty)
+            }
+        }
+    }
+
 }

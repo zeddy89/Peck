@@ -1,93 +1,81 @@
 import AppKit
 import Carbon
 
-/// Global hotkey via Carbon's RegisterEventHotKey. This API needs no special
-/// permissions and works even when Peck is not the active app. The key and
-/// modifiers are read from `Preferences`, so the hotkey is user-configurable;
-/// call `reregister()` after the user records a new one.
+struct HotkeyBinding: Equatable {
+    let keyCode: Int
+    let modifiers: Int
+    var isValid: Bool { HotkeyFormatter.isValid(keyCode: keyCode, carbonModifiers: modifiers) }
+}
+
+/// Two registrations share Carbon's dispatcher. Each handler must return
+/// eventNotHandledErr for the other registration so only the intended action runs.
 final class HotkeyManager {
-
+    enum Action: UInt32 { case crosshair = 1, currentFocus = 2 }
+    static let signature: OSType = 0x5045_434B
     var onActivate: (() -> Void)?
-
+    private let action: Action
+    private let registerEvent: (HotkeyBinding, EventHotKeyID) -> EventHotKeyRef?
+    private let unregisterEvent: (EventHotKeyRef) -> Void
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
+    private(set) var binding: HotkeyBinding?
 
-    /// Returns whether the hotkey is bound after the call.
+    init(action: Action = .crosshair,
+         registerEvent: @escaping (HotkeyBinding, EventHotKeyID) -> EventHotKeyRef? = { candidate, identifier in
+             var reference: EventHotKeyRef?
+             let status = RegisterEventHotKey(UInt32(candidate.keyCode), UInt32(candidate.modifiers),
+                 identifier, GetEventDispatcherTarget(), 0, &reference)
+             return status == noErr ? reference : nil
+         }, unregisterEvent: @escaping (EventHotKeyRef) -> Void = { UnregisterEventHotKey($0) }) {
+        self.action = action
+        self.registerEvent = registerEvent
+        self.unregisterEvent = unregisterEvent
+    }
+
+    /// Used directly by the installed Carbon callback and by identity tests.
+    func handle(_ event: EventRef?) -> OSStatus {
+        guard let event else { return OSStatus(eventNotHandledErr) }
+        var identifier = EventHotKeyID()
+        guard GetEventParameter(event, EventParamName(kEventParamDirectObject),
+            EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil,
+            &identifier) == noErr,
+            identifier.signature == Self.signature, identifier.id == action.rawValue else {
+            return OSStatus(eventNotHandledErr)
+        }
+        onActivate?()
+        return noErr
+    }
+
+    /// Register a replacement before removing the working old shortcut. Rejected
+    /// OS registrations leave the previous binding intact and return false.
     @discardableResult
-    func register() -> Bool {
-        guard hotKeyRef == nil else { return true }
-
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed))
-
-        // Install the dispatcher handler once. Guarding on handlerRef (in addition
-        // to checking the status) prevents a partial-failure path from installing a
-        // second handler and leaking the first.
+    func register(_ candidate: HotkeyBinding) -> Bool {
+        guard candidate.isValid else { return false }
+        if candidate == binding && hotKeyRef != nil { return true }
         if handlerRef == nil {
-            let callback: EventHandlerUPP = { _, _, userData in
-                guard let userData else { return noErr }
-                let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
-                DispatchQueue.main.async {
-                    manager.onActivate?()
-                }
-                return noErr
+            var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+            let callback: EventHandlerUPP = { _, event, userData in
+                guard let userData else { return OSStatus(eventNotHandledErr) }
+                return Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue().handle(event)
             }
-
-            let installStatus = InstallEventHandler(
-                GetEventDispatcherTarget(),
-                callback,
-                1,
-                &eventType,
-                Unmanaged.passUnretained(self).toOpaque(),
-                &handlerRef)
-
-            guard installStatus == noErr else {
-                handlerRef = nil
-                return false
-            }
+            let status = InstallEventHandler(GetEventDispatcherTarget(), callback, 1, &type,
+                Unmanaged.passUnretained(self).toOpaque(), &handlerRef)
+            guard status == noErr else { handlerRef = nil; return false }
         }
-
-        let prefs = Preferences.shared
-        let keyCode = UInt32(max(0, prefs.hotkeyKeyCode))
-        let modifiers = UInt32(max(0, prefs.hotkeyCarbonModifiers))
-        let hotKeyID = EventHotKeyID(signature: OSType(0x5045_434B) /* 'PECK' */, id: 1)
-
-        let registerStatus = RegisterEventHotKey(
-            keyCode,
-            modifiers,
-            hotKeyID,
-            GetEventDispatcherTarget(),
-            0,
-            &hotKeyRef)
-
-        if registerStatus != noErr {
-            hotKeyRef = nil
-            return false
-        }
+        let identifier = EventHotKeyID(signature: Self.signature, id: action.rawValue)
+        guard let replacement = registerEvent(candidate, identifier) else { return false }
+        if let hotKeyRef { unregisterEvent(hotKeyRef) }
+        hotKeyRef = replacement
+        binding = candidate
         return true
     }
 
     func unregister() {
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
-        }
-        if let handlerRef {
-            RemoveEventHandler(handlerRef)
-            self.handlerRef = nil
-        }
+        if let hotKeyRef { unregisterEvent(hotKeyRef) }
+        if let handlerRef { RemoveEventHandler(handlerRef) }
+        hotKeyRef = nil
+        handlerRef = nil
+        binding = nil
     }
-
-    /// Re-read the hotkey from Preferences and rebind. Call after the user records
-    /// a new shortcut. Returns whether the new binding took.
-    @discardableResult
-    func reregister() -> Bool {
-        unregister()
-        return register()
-    }
-
-    deinit {
-        unregister()
-    }
+    deinit { unregister() }
 }

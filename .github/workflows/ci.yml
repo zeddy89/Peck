@@ -33,3 +33,6 @@ jobs:
 
       - name: Fallback swiftc build
         run: ./Scripts/build-no-xcode.sh
+
+      - name: Check release packaging script syntax
+        run: bash -n Scripts/package-release.sh

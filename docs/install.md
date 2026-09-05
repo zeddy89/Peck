@@ -1,50 +1,37 @@
-# Install & build
+# Installation
 
-## Download & run
+## Download and open
 
-Prebuilt releases are on the [Releases page](../../../releases). Download `Peck.zip`, unzip it, and drag `Peck.app` to `/Applications`.
+Peck requires macOS 13 or later. Download **Peck-adhoc.zip** from the [official releases](https://github.com/zeddy89/Peck/releases/latest), unzip it, and move **Peck.app** to **Applications** before granting permissions. Release builds contain Apple silicon and Intel executables.
 
-The build is **ad-hoc signed and not notarized** (this is a personal/homelab tool, not a Developer-ID-signed release), so Gatekeeper refuses the first launch with *"Peck cannot be opened because the developer cannot be verified."* Clear the download quarantine once:
+The current package is ad-hoc signed with hardened runtime but is **not notarized**. If macOS blocks opening, use **System Settings > Privacy & Security > Open Anyway** when available. For a trusted copy downloaded from this repository, the quarantine attribute can also be removed explicitly:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Peck.app
 ```
 
-Then open it normally. (Or: System Settings → Privacy & Security → find the blocked-app notice → **Open Anyway**. On recent macOS the old right-click → Open shortcut no longer bypasses this.)
-
-**After updating to a new build you may need to re-grant Accessibility.** An ad-hoc signature changes on every build, and macOS ties the Accessibility grant to the signature, so a fresh download can silently stop posting keystrokes while the toggle still *looks* enabled. If typing stops working after an update, remove Peck from System Settings → Privacy & Security → Accessibility and re-add it, or run `tccutil reset Accessibility dev.homelab.peck`, then relaunch.
+Then open the application. Its bird icon appears in the menu bar; Basic Settings opens on the first launch of this version.
 
 ## Permissions
 
-Peck posts synthetic mouse and keyboard events, which requires **Accessibility** permission:
+Enable **Peck** in **System Settings > Privacy & Security > Accessibility**. Enable **Input Monitoring** as well if macOS requests it. Peck needs keyboard posting and a filtering event tap so an abort Escape does not reach the receiving editor.
 
-System Settings → Privacy & Security → Accessibility → enable Peck.
+If the tap cannot be established, Peck refuses to type. Detected Secure Input also blocks or stops delivery because Escape interception cannot be relied on in that state. This does not mean every password field is unsupported.
 
-It prompts on first launch. Three things worth knowing:
+## Updates
 
-- **Rebuilds can invalidate the grant.** Ad hoc code signatures change on every build, and TCC ties the grant to the signature. If keystrokes silently stop working after a rebuild, remove Peck from the Accessibility list and re-add it, or reset with `tccutil reset Accessibility dev.homelab.peck`. Setting a real development team in Signing & Capabilities makes the signature stable and avoids this entirely.
-- **Run it from a stable location.** Move the built app to `/Applications` before granting permission so the path and grant stay consistent.
-- **Revoking Accessibility mid-session fails silently.** If you turn Peck off in System Settings while it's running, arming still shows the crosshair but no keystrokes land (and the Esc-abort monitor stops seeing keys). Quit and relaunch after re-granting.
-
-No sandbox, no network access, no clipboard history, no persistence. It reads the pasteboard once per paste, at the moment you click.
-
-## Building from source
-
-Open `Peck.xcodeproj` in Xcode (15 or later, macOS 13+ target), select the shared **Peck** scheme, and Product → Run. That's it. No dependencies, no packages, no storyboards, no sandbox.
-
-- **Build:** `xcodebuild -project Peck.xcodeproj -scheme Peck -configuration Debug build`
-- **Test:** `xcodebuild -project Peck.xcodeproj -scheme Peck test` — the `PeckTests` target is a host-less logic-test bundle covering the coordinate flip, key/newline dispatch, preferences, hotkey formatting, and layout-aware key mapping. It never launches the app, so it runs headless.
-
-### No-Xcode fallback
-
-No Xcode installed, or the project file misbehaves?
+Quit the old instance before replacing the app. Keep the installed location stable. An ad-hoc rebuild can require refreshing the permission grant even if its toggle still looks enabled: remove Peck from the Accessibility list, re-add the installed app, and relaunch. If necessary, reset its grant first:
 
 ```bash
-./Scripts/build-no-xcode.sh
+tccutil reset Accessibility dev.homelab.peck
 ```
 
-That produces `build/Peck.app` with plain `swiftc` (needs Command Line Tools). It auto-detects your architecture with `uname -m`, so it builds natively on Apple Silicon (arm64) and Intel (x86_64) without editing the triple, and derives the version from the Xcode project so it can't drift. If your working copy lives in an iCloud-synced `~/Documents`, the script clears the `com.apple.FinderInfo` xattr and retries `codesign` so the sync layer's re-stamping doesn't break signing.
+Version 1.4 preserves saved timing values. New installations default to Fast (2 ms); unmatched saved delays display Custom. Routine paste confirmations default to Off, including older saved Return/size rules unless the new master was explicitly enabled. Failure checks remain separate. Old profiles without the master import with it Off.
+
+The current-focus shortcut defaults to **⌃⌥V**, alongside the existing **⌃⌥⌘V** crosshair shortcut. If registration conflicts, choose another shortcut in Advanced; the failure is available in Last Run Status.
 
 ## Launch at login
 
-Toggle **Launch at login** in Settings. It uses `SMAppService.mainApp` (macOS 13+) with no helper bundle and no third-party dependency. For the registration to stick, run Peck from a stable, signed location (e.g. `/Applications`); an ad hoc build in a temporary directory may be refused by the login-item daemon.
+Use **Launch at login** in Basic Settings. The switch reflects macOS registration state. Run Peck from Applications; registration can fail for a temporary or untrusted build.
+
+For source builds and signing, see [build and release](development/build-release.md).

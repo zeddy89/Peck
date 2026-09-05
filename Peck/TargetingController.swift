@@ -5,6 +5,7 @@ import Carbon.HIToolbox
 final class TargetingController {
 
     private var overlays: [OverlayWindow] = []
+    private var targetWindows: [CapturedTarget] = []
     private(set) var isArmed = false
     var onStateChange: ((Bool) -> Void)?
 
@@ -25,13 +26,12 @@ final class TargetingController {
 
         guard AccessibilityGate.check(prompt: true) else { return }
 
-        // Another app holding Secure Event Input (a password field, a locked
-        // screen, some terminals) swallows synthetic keystrokes. Warn, but let the
-        // user proceed since detection can't tell whether it applies to the target.
-        if IsSecureEventInputEnabled(), !confirmSecureInput() {
+        guard !IsSecureEventInputEnabled() else {
+            Typist.shared.recordFailure("Secure Input is active, so Peck cannot protect Escape. Nothing was typed. Close the app or field holding Secure Input, then retry.")
             return
         }
 
+        targetWindows = TargetApplication.windows()
         isArmed = true
 
         for screen in NSScreen.screens {
@@ -79,9 +79,33 @@ final class TargetingController {
         // synthetic click that hit-tests a lingering overlay arrives with the
         // session already disarmed and must not schedule a second click+type.
         guard isArmed else { return }
-        disarm()
-
         let cgPoint = CoordinateConverter.toCG(screenPoint)
+        let target = targetWindows.first { $0.bounds.contains(cgPoint) }
+        disarm()
+        guard let target else {
+            Typist.shared.recordFailure("No target window could be identified. Nothing was typed.")
+            return
+        }
+        submit(target: target, focusPoint: cgPoint)
+    }
+
+    /// The menu supplies the snapshot taken before menu tracking, not an app
+    /// guessed after confirmation has activated Peck.
+    func typeAtCurrentFocus(_ target: CapturedTarget?) {
+        if isArmed { disarm(); return }
+        guard !Typist.shared.isTyping else { Typist.shared.cancel(); return }
+        guard AccessibilityGate.check(prompt: true), let target else {
+            Typist.shared.recordFailure("Current focus could not be identified or Accessibility is unavailable. Nothing was typed.")
+            return
+        }
+        submit(target: target, focusPoint: nil)
+    }
+
+    private func submit(target: CapturedTarget, focusPoint: CGPoint?) {
+        guard !IsSecureEventInputEnabled() else {
+            Typist.shared.recordFailure("Secure Input is active, so Peck cannot protect Escape. Nothing was typed. Close the app or field holding Secure Input, then retry.")
+            return
+        }
         let rawText = ClipboardTextReader.read() ?? ""
 
         // The guardrail against pecking a huge file into a root shell. Count what will
@@ -91,11 +115,14 @@ final class TargetingController {
         let prefs = Preferences.shared
         let typedCount = TextProcessing.typedCharacterCount(
             for: rawText, stripTrailingNewline: prefs.stripTrailingNewline)
-        let threshold = prefs.largePasteThreshold
-        if threshold > 0, typedCount > threshold {
-            let prepared = TextProcessing.preparedText(
-                for: rawText, stripTrailingNewline: prefs.stripTrailingNewline)
-            if !confirmLargePaste(prepared, typedCount: typedCount) { return }
+        let plan = TextProcessing.typingPlan(for: rawText, workaround: prefs.indentWorkaround,
+            stripTrailingNewline: prefs.stripTrailingNewline, appendReturn: prefs.pressReturnAfterTyping)
+        guard !plan.isEmpty else { return }
+        let returns = PasteSafety.returnCount(in: plan)
+        if PasteSafety.shouldConfirm(typedCount: typedCount, returns: returns,
+            confirmationEnabled: prefs.confirmBeforeTyping,
+            warnOnReturn: prefs.warnOnReturn, threshold: prefs.largePasteThreshold) {
+            if !confirmPaste(typedCount: typedCount, returns: returns) { return }
         }
 
         // The focus click and the pre-type settle now run inside Typist, on its serial
@@ -105,25 +132,11 @@ final class TargetingController {
         // synthetic click is posted from here that a re-armed overlay could catch.
         let settleDelay: TimeInterval = 0.15
         let preTypeDelay = TimeInterval(max(0, prefs.preTypeDelayMs)) / 1000.0
-        Typist.shared.type(rawText, focusPoint: cgPoint,
-                           settleDelay: settleDelay, preTypeDelay: preTypeDelay)
+        Typist.shared.type(rawText, focusPoint: focusPoint,
+                           settleDelay: settleDelay, preTypeDelay: preTypeDelay, target: target)
     }
 
     // MARK: - Confirmation alerts
-
-    private func confirmSecureInput() -> Bool {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Another app has Secure Input enabled"
-        alert.informativeText = "While Secure Input is active, some apps swallow "
-            + "synthetic keystrokes, so Peck's typing may not reach your target. "
-            + "You can proceed and see, or cancel and try again after dismissing "
-            + "whatever holds it (often a password field or the lock screen)."
-        alert.addButton(withTitle: "Arm Anyway")
-        alert.addButton(withTitle: "Cancel")
-        makeCancelDefault(alert)
-        return runModalConfirmation(alert)
-    }
 
     /// Make Cancel the keyboard default so a stray Return dismisses a guardrail
     /// safely instead of confirming the very action it exists to prevent.
@@ -133,14 +146,11 @@ final class TargetingController {
         alert.buttons.dropFirst().first?.keyEquivalent = "\r"
     }
 
-    private func confirmLargePaste(_ text: String, typedCount: Int) -> Bool {
-        let lineCount = text.isEmpty ? 0 : TextNormalizer.lineBreakCount(in: text) + 1
+    private func confirmPaste(typedCount: Int, returns: Int) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Type \(typedCount) characters?"
-        alert.informativeText = "The clipboard is \(typedCount) characters across "
-            + "\(lineCount) line\(lineCount == 1 ? "" : "s"). Peck will type all of it "
-            + "into wherever you clicked — each newline runs as Return in a console."
+        alert.messageText = "Type \(typedCount) characters and \(returns) Return presses?"
+        alert.informativeText = "Return can execute commands in a console. This count includes remaining clipboard newlines and any appended Return. Clipboard contents are not displayed. In vi/Vim, :set paste alone does not enter Insert mode: enter Insert mode yourself before starting. Peck cannot detect the guest editor mode."
         alert.addButton(withTitle: "Type It")
         alert.addButton(withTitle: "Cancel")
         makeCancelDefault(alert)
@@ -236,5 +246,37 @@ enum ClipboardTextReader {
             options: options,
             documentAttributes: nil
         ).string
+    }
+}
+
+struct CapturedTarget {
+    let identity: TargetIdentity
+    let bounds: CGRect
+}
+
+/// Only process IDs, window IDs and geometry are read. No titles or contents.
+/// Window identity is not a browser-tab identity or guest insertion-state check.
+enum TargetApplication {
+    static func windows() -> [CapturedTarget] {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
+        return windows.compactMap { window in
+            guard (window[kCGWindowLayer as String] as? Int) == 0,
+                  (window[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let bounds = window[kCGWindowBounds as String] as? [String: Any],
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+                  let pid = window[kCGWindowOwnerPID as String] as? Int32,
+                  let id = window[kCGWindowNumber as String] as? UInt32 else { return nil }
+            return CapturedTarget(identity: TargetIdentity(pid: pid, windowID: id), bounds: rect)
+        }
+    }
+    static func current() -> CapturedTarget? {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+        return windows().first { $0.identity.pid == pid }
+    }
+    static func matches(_ target: CapturedTarget) -> Bool {
+        current()?.identity == target.identity
+    }
+    static func remainsAtPoint(_ target: CapturedTarget, point: CGPoint) -> Bool {
+        windows().first { $0.bounds.contains(point) }?.identity == target.identity
     }
 }

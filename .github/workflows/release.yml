@@ -1,10 +1,10 @@
 name: Release
 
 # Publish a downloadable Peck.app as a GitHub Release asset. Two triggers:
-#   - Push a version tag (the normal path):   git tag v1.0.1 && git push origin v1.0.1
+#   - Push a version tag (the normal path):   git tag v1.4.0 && git push origin v1.4.0
 #   - Or push to the working branch with "[release]" in the commit message, for
 #     environments where tags can't be pushed directly — the runner then creates the
-#     tag and release itself via its GITHUB_TOKEN (default tag: v1.0.1).
+#     tag and release itself via its GITHUB_TOKEN (tag derived from the project).
 # Release assets are stored separately from Actions artifacts, so this is unaffected
 # by the Actions artifact storage quota.
 on:
@@ -25,43 +25,77 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Validate version and resolve release metadata
+        id: tag
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          project = pathlib.Path("Peck.xcodeproj/project.pbxproj").read_text()
+          versions = {value.strip().strip('"') for value in re.findall(r"MARKETING_VERSION\s*=\s*([^;]+);", project)}
+          if len(versions) != 1:
+              raise SystemExit("All project MARKETING_VERSION settings must agree.")
+          version = versions.pop()
+          if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+              raise SystemExit("Expected a numeric major.minor.patch project version.")
+          tag = "v" + version
+          if os.environ["GITHUB_REF"].startswith("refs/tags/"):
+              if os.environ["GITHUB_REF_NAME"] != tag:
+                  raise SystemExit("Release tag must match project MARKETING_VERSION: " + tag)
+          else:
+              # Branch-triggered releases must never attach a new build to a tag
+              # that already identifies a different commit. Annotated tags are peeled.
+              remote = subprocess.check_output(["git", "ls-remote", "--tags", "origin",
+                  "refs/tags/" + tag, "refs/tags/" + tag + "^{}"], text=True)
+              refs = dict(line.split()[::-1] for line in remote.splitlines())
+              existing = refs.get("refs/tags/" + tag + "^{}", refs.get("refs/tags/" + tag))
+              if existing and existing != os.environ["GITHUB_SHA"]:
+                  raise SystemExit("Existing release tag points to a different commit.")
+          notes = pathlib.Path("docs/releases") / (version + ".md")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("name=" + tag + "\nversion=" + version + "\n")
+              output.write("notes=" + (str(notes) if notes.is_file() else "") + "\n")
+          PYTHON
+
       - name: Build (Release)
         run: >
           xcodebuild -project Peck.xcodeproj -scheme Peck -configuration Release
-          -derivedDataPath build -destination 'platform=macOS' build
+          -derivedDataPath build -destination 'generic/platform=macOS'
+          ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build
 
       - name: Test
         run: xcodebuild -project Peck.xcodeproj -scheme Peck -destination 'platform=macOS' test
 
-      - name: Package Peck.app into a zip
+      - name: Verify built release version and architectures
+        env:
+          PECK_VERSION: ${{ steps.tag.outputs.version }}
         run: |
-          APP="build/Build/Products/Release/Peck.app"
-          test -d "$APP" || { echo "App not found at $APP" >&2; exit 1; }
-          # ditto (not `zip`) preserves the code signature and the bundle's internal
-          # symlinks; a plain zip can corrupt the signature and break launch.
-          ditto -c -k --keepParent "$APP" "Peck.zip"
-          echo "SHA-256:"; shasum -a 256 Peck.zip
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/Build/Products/Release/Peck.app/Contents/Info.plist)" = "$PECK_VERSION"
+          lipo -verify_arch arm64 x86_64 build/Build/Products/Release/Peck.app/Contents/MacOS/Peck
 
-      - name: Resolve release tag
-        id: tag
+      - name: Package ad-hoc app (not notarized)
+        run: ./Scripts/package-release.sh build/Build/Products/Release/Peck.app dist
+
+      - name: Create archive checksum
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
-          else
-            # Branch-triggered [release]: derive the tag from the project version so it
-            # tracks MARKETING_VERSION automatically instead of being hardcoded here.
-            VERSION="$(grep -m1 'MARKETING_VERSION' Peck.xcodeproj/project.pbxproj | sed 's/.*= \([0-9.]*\);.*/\1/')"
-            echo "name=v${VERSION}" >> "$GITHUB_OUTPUT"
-          fi
+          test ! -e dist/SHA256SUMS
+          (cd dist && shasum -a 256 Peck-adhoc.zip > SHA256SUMS)
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+          NOTES_FILE: ${{ steps.tag.outputs.notes }}
         run: |
-          TAG="${{ steps.tag.outputs.name }}"
-          # Create the release (and its tag) if new, otherwise just refresh the asset.
-          gh release create "$TAG" Peck.zip \
-            --title "Peck $TAG" \
+          # A failed creation is a failure. Never replace an existing release's assets.
+          peck_notes_args=(--generate-notes)
+          if [[ -n "$NOTES_FILE" ]]; then
+            peck_notes_args=(--notes-file "$NOTES_FILE")
+          fi
+          gh release create "$TAG" dist/Peck-adhoc.zip dist/SHA256SUMS \
+            --title "Peck $TAG (ad-hoc, not notarized)" \
             --target "$GITHUB_SHA" \
-            --generate-notes \
-            || gh release upload "$TAG" Peck.zip --clobber
+            "${peck_notes_args[@]}"

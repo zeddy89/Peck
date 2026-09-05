@@ -117,9 +117,8 @@ enum TextProcessing {
         let text = preparedText(for: rawText, stripTrailingNewline: stripTrailingNewline)
         let content = contentKeys(for: text)
 
-        // Nothing to type (and no Return to append) → empty plan, so bracketed-paste
-        // markers aren't emitted around empty content.
-        if content.isEmpty && !appendReturn {
+        // Never execute Return or markers for an empty/filtered clipboard.
+        if content.isEmpty {
             return []
         }
 
