@@ -1,6 +1,6 @@
 name: Release
 
-# Publish a downloadable Peck.app as a GitHub Release asset. Two triggers:
+# Publish a downloadable Peck.app as a GitHub Release asset.
 #   - Push a version tag (the normal path):   git tag v1.4.0 && git push origin v1.4.0
 #   - Or push to the working branch with "[release]" in the commit message, for
 #     environments where tags can't be pushed directly — the runner then creates the
@@ -11,6 +11,12 @@ on:
   push:
     tags: ['v*']
     branches: ['claude/**']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing version tag to rebuild without moving it
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -19,14 +25,25 @@ jobs:
   release:
     name: Build & publish
     # Only actually release on a version tag, or on a branch push explicitly marked [release].
-    if: startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release]')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release]')
     # Pinned to match CI so a green CI build predicts a green release build.
     runs-on: macos-14
     steps:
+      - name: Validate requested tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REQUESTED_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          python3 -c 'import os, re; assert re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", os.environ["REQUESTED_RELEASE_TAG"]), "Expected vMAJOR.MINOR.PATCH"'
+
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.release_tag) || github.sha }}
 
       - name: Validate version and resolve release metadata
         id: tag
+        env:
+          REQUESTED_RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           python3 - <<'PYTHON'
           import os
@@ -42,22 +59,25 @@ jobs:
           if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
               raise SystemExit("Expected a numeric major.minor.patch project version.")
           tag = "v" + version
-          if os.environ["GITHUB_REF"].startswith("refs/tags/"):
-              if os.environ["GITHUB_REF_NAME"] != tag:
-                  raise SystemExit("Release tag must match project MARKETING_VERSION: " + tag)
-          else:
-              # Branch-triggered releases must never attach a new build to a tag
-              # that already identifies a different commit. Annotated tags are peeled.
-              remote = subprocess.check_output(["git", "ls-remote", "--tags", "origin",
-                  "refs/tags/" + tag, "refs/tags/" + tag + "^{}"], text=True)
-              refs = dict(line.split()[::-1] for line in remote.splitlines())
-              existing = refs.get("refs/tags/" + tag + "^{}", refs.get("refs/tags/" + tag))
-              if existing and existing != os.environ["GITHUB_SHA"]:
-                  raise SystemExit("Existing release tag points to a different commit.")
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+          tagged = os.environ["GITHUB_REF"].startswith("refs/tags/")
+          requested = os.environ.get("REQUESTED_RELEASE_TAG") if manual else os.environ.get("GITHUB_REF_NAME")
+          if (manual or tagged) and requested != tag:
+              raise SystemExit("Release tag must match project MARKETING_VERSION: " + tag)
+          remote = subprocess.check_output(["git", "ls-remote", "--tags", "origin",
+              "refs/tags/" + tag, "refs/tags/" + tag + "^{}"], text=True)
+          refs = dict(line.split()[::-1] for line in remote.splitlines() if line.strip())
+          existing = refs.get("refs/tags/" + tag + "^{}", refs.get("refs/tags/" + tag))
+          if (manual or tagged) and not existing:
+              raise SystemExit("Requested release tag must already exist.")
+          if existing and existing != head:
+              raise SystemExit("Release tag does not identify the checked-out commit.")
           notes = pathlib.Path("docs/releases") / (version + ".md")
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write("name=" + tag + "\nversion=" + version + "\n")
               output.write("notes=" + (str(notes) if notes.is_file() else "") + "\n")
+              output.write("commit=" + head + "\nverify_tag=" + str(manual or tagged).lower() + "\n")
           PYTHON
 
       - name: Build (Release)
@@ -74,7 +94,7 @@ jobs:
           PECK_VERSION: ${{ steps.tag.outputs.version }}
         run: |
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/Build/Products/Release/Peck.app/Contents/Info.plist)" = "$PECK_VERSION"
-          lipo -verify_arch arm64 x86_64 build/Build/Products/Release/Peck.app/Contents/MacOS/Peck
+          lipo build/Build/Products/Release/Peck.app/Contents/MacOS/Peck -verify_arch arm64 x86_64
 
       - name: Package ad-hoc app (not notarized)
         run: ./Scripts/package-release.sh build/Build/Products/Release/Peck.app dist
@@ -89,13 +109,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.name }}
           NOTES_FILE: ${{ steps.tag.outputs.notes }}
+          PECK_COMMIT: ${{ steps.tag.outputs.commit }}
+          VERIFY_TAG: ${{ steps.tag.outputs.verify_tag }}
         run: |
           # A failed creation is a failure. Never replace an existing release's assets.
           peck_notes_args=(--generate-notes)
           if [[ -n "$NOTES_FILE" ]]; then
             peck_notes_args=(--notes-file "$NOTES_FILE")
           fi
+          peck_tag_args=()
+          if [[ "$VERIFY_TAG" == true ]]; then peck_tag_args=(--verify-tag); fi
           gh release create "$TAG" dist/Peck-adhoc.zip dist/SHA256SUMS \
             --title "Peck $TAG (ad-hoc, not notarized)" \
-            --target "$GITHUB_SHA" \
-            "${peck_notes_args[@]}"
+            --target "$PECK_COMMIT" \
+            "${peck_tag_args[@]}" "${peck_notes_args[@]}"

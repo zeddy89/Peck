@@ -51,3 +51,13 @@ The script waits for notarization, staples and validates the ticket, verifies si
 ## Publication
 
 CI builds Debug and Release, runs tests, checks the fallback build, and validates packaging-script syntax. The release workflow packages and publishes on configured version-tag or explicit release triggers. Failed release creation does not overwrite existing assets. Before publishing, verify the version/build number, architecture slices, extracted signature, and archive checksum, and review [verification limits](../verification.md).
+
+### Recover a failed release workflow
+
+If a workflow failure occurs after the version tag was pushed, fix the workflow on `main` and dispatch it against the existing tag:
+
+```bash
+gh workflow run release.yml --ref main -f release_tag=v1.4.0
+```
+
+This runs the workflow definition from `main` but checks out the application and release notes from the exact existing tag. The tag must already exist, match the project's version, and resolve to the checked-out commit. The workflow does not move the tag or overwrite an existing release. Monitor the dispatched run before treating the release as published; this command only starts the workflow.
